@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.material3.ExperimentalMaterial3Api::class
+)
 
 package com.example.basicgallery.ui.gallery
 
@@ -11,11 +14,13 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -70,6 +75,10 @@ import coil.size.Precision
 import com.example.basicgallery.R
 import com.example.basicgallery.data.model.PhotoItem
 
+private data class PendingTrashRequest(
+    val closeViewerAfterSuccess: Boolean
+)
+
 @Composable
 fun GalleryRoute(viewModel: GalleryViewModel) {
     val context = LocalContext.current
@@ -80,6 +89,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var hasPermission by remember { mutableStateOf(context.hasAnyPermission(permissions)) }
     var permissionRequestStarted by rememberSaveable { mutableStateOf(false) }
     var selectedPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingTrashRequest by remember { mutableStateOf<PendingTrashRequest?>(null) }
     val gridState = rememberLazyGridState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -87,6 +97,36 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     ) { result ->
         permissionRequestStarted = true
         hasPermission = result.values.any { it } || context.hasAnyPermission(permissions)
+    }
+
+    val trashLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        val request = pendingTrashRequest
+        pendingTrashRequest = null
+
+        if (result.resultCode == Activity.RESULT_OK && request != null) {
+            if (request.closeViewerAfterSuccess) {
+                selectedPhotoUri = null
+            }
+            viewModel.clearSelection()
+            viewModel.loadPhotos(forceRefresh = true)
+        }
+    }
+
+    fun launchTrashRequest(photoUris: List<Uri>, closeViewerAfterSuccess: Boolean) {
+        if (photoUris.isEmpty()) return
+
+        val intentSender = viewModel.createTrashRequest(photoUris)
+        if (intentSender == null) {
+            Toast.makeText(context, R.string.trash_not_supported, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        pendingTrashRequest = PendingTrashRequest(
+            closeViewerAfterSuccess = closeViewerAfterSuccess
+        )
+        trashLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
     }
 
     DisposableEffect(lifecycleOwner, permissions) {
@@ -107,13 +147,23 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         }
     }
 
+    BackHandler(enabled = selectedPhotoUri == null && uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
+
     Surface(modifier = Modifier.fillMaxSize()) {
         val openedPhotoUri = selectedPhotoUri
         when {
             openedPhotoUri != null -> {
                 FullscreenPhotoScreen(
                     photoUri = Uri.parse(openedPhotoUri),
-                    onBack = { selectedPhotoUri = null }
+                    onBack = { selectedPhotoUri = null },
+                    onDelete = { uri ->
+                        launchTrashRequest(
+                            photoUris = listOf(uri),
+                            closeViewerAfterSuccess = true
+                        )
+                    }
                 )
             }
 
@@ -134,8 +184,28 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     uiState = uiState,
                     gridState = gridState,
                     onPhotoClick = { photo ->
-                        selectedPhotoUri = photo.contentUri.toString()
+                        if (uiState.isSelectionMode) {
+                            viewModel.toggleSelection(photo.id)
+                        } else {
+                            selectedPhotoUri = photo.contentUri.toString()
+                        }
                     },
+                    onPhotoLongClick = { photo ->
+                        viewModel.startSelection(photo.id)
+                    },
+                    onDeleteSelected = {
+                        val selectedUris = uiState.photos
+                            .asSequence()
+                            .filter { it.id in uiState.selectedPhotoIds }
+                            .map { it.contentUri }
+                            .toList()
+
+                        launchTrashRequest(
+                            photoUris = selectedUris,
+                            closeViewerAfterSuccess = false
+                        )
+                    },
+                    onClearSelection = { viewModel.clearSelection() },
                     onRetry = { viewModel.loadPhotos(forceRefresh = true) }
                 )
             }
@@ -148,12 +218,39 @@ private fun GalleryScreen(
     uiState: GalleryUiState,
     gridState: LazyGridState,
     onPhotoClick: (PhotoItem) -> Unit,
+    onPhotoLongClick: (PhotoItem) -> Unit,
+    onDeleteSelected: () -> Unit,
+    onClearSelection: () -> Unit,
     onRetry: () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = stringResource(id = R.string.gallery_title)) }
+                title = {
+                    if (uiState.isSelectionMode) {
+                        Text(
+                            text = stringResource(
+                                id = R.string.gallery_selected_count,
+                                uiState.selectedCount
+                            )
+                        )
+                    } else {
+                        Text(text = stringResource(id = R.string.gallery_title))
+                    }
+                },
+                actions = {
+                    if (uiState.isSelectionMode) {
+                        TextButton(
+                            onClick = onDeleteSelected,
+                            enabled = uiState.selectedCount > 0
+                        ) {
+                            Text(text = stringResource(id = R.string.delete))
+                        }
+                        TextButton(onClick = onClearSelection) {
+                            Text(text = stringResource(id = R.string.cancel))
+                        }
+                    }
+                }
             )
         }
     ) { innerPadding ->
@@ -199,7 +296,9 @@ private fun GalleryScreen(
                         ) { photo ->
                             PhotoGridItem(
                                 photo = photo,
-                                onClick = { onPhotoClick(photo) }
+                                isSelected = photo.id in uiState.selectedPhotoIds,
+                                onClick = { onPhotoClick(photo) },
+                                onLongClick = { onPhotoLongClick(photo) }
                             )
                         }
                     }
@@ -220,7 +319,9 @@ private fun GalleryScreen(
 @Composable
 private fun PhotoGridItem(
     photo: PhotoItem,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -230,7 +331,10 @@ private fun PhotoGridItem(
             .fillMaxWidth()
             .aspectRatio(1f)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         val itemSizePx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
         val request = remember(photo.id, photo.contentUri, context, itemSizePx) {
@@ -252,13 +356,22 @@ private fun PhotoGridItem(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+            )
+        }
     }
 }
 
 @Composable
 private fun FullscreenPhotoScreen(
     photoUri: Uri,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onDelete: (Uri) -> Unit
 ) {
     BackHandler(onBack = onBack)
 
@@ -272,6 +385,11 @@ private fun FullscreenPhotoScreen(
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text(text = stringResource(id = R.string.back))
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { onDelete(photoUri) }) {
+                        Text(text = stringResource(id = R.string.delete))
                     }
                 }
             )

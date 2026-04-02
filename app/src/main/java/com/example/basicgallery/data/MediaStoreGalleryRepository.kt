@@ -2,6 +2,8 @@ package com.example.basicgallery.data
 
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.content.IntentSender
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import com.example.basicgallery.data.model.PhotoItem
@@ -11,6 +13,13 @@ import kotlinx.coroutines.withContext
 class MediaStoreGalleryRepository(
     private val contentResolver: ContentResolver
 ) : GalleryRepository {
+
+    override fun createTrashRequest(photoUris: Collection<Uri>): IntentSender? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        if (photoUris.isEmpty()) return null
+
+        return MediaStore.createTrashRequest(contentResolver, photoUris, true).intentSender
+    }
 
     override suspend fun loadPhotos(): List<PhotoItem> = withContext(Dispatchers.IO) {
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

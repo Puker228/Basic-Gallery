@@ -9,4 +9,8 @@
     <string name="photo_content_description">Selected photo</string>
     <string name="retry">Retry</string>
     <string name="back">Back</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="gallery_selected_count">Selected: %1$d</string>
+    <string name="trash_not_supported">Trash is available on Android 11 and newer.</string>
 </resources>
