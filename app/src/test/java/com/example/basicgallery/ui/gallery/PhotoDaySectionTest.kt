@@ -4,6 +4,7 @@ import android.net.Uri
 import com.example.basicgallery.data.model.PhotoItem
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.mockito.Mockito.mock
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -87,7 +88,7 @@ class PhotoDaySectionTest {
     private fun createPhoto(id: Long, dateTime: LocalDateTime): PhotoItem {
         return PhotoItem(
             id = id,
-            contentUri = Uri.parse("content://media/$id"),
+            contentUri = mock(Uri::class.java),
             dateTakenMillis = dateTime.atZone(zoneId).toInstant().toEpochMilli()
         )
     }
