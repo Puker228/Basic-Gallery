@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -58,10 +59,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -74,6 +77,7 @@ import coil.request.ImageRequest
 import coil.size.Precision
 import com.example.basicgallery.R
 import com.example.basicgallery.data.model.PhotoItem
+import java.util.Locale
 
 private data class PendingTrashRequest(
     val closeViewerAfterSuccess: Boolean
@@ -170,7 +174,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
             !hasPermission -> {
                 PermissionRequiredScreen(
                     showSettingsButton = permissionRequestStarted &&
-                        !context.shouldShowAnyPermissionRationale(permissions),
+                            !context.shouldShowAnyPermissionRationale(permissions),
                     onRequestPermission = {
                         permissionRequestStarted = true
                         permissionLauncher.launch(permissions)
@@ -223,6 +227,25 @@ private fun GalleryScreen(
     onClearSelection: () -> Unit,
     onRetry: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val locale = remember(configuration) {
+        if (configuration.locales.isEmpty) {
+            Locale.getDefault()
+        } else {
+            configuration.locales[0]
+        }
+    }
+    val todayLabel = stringResource(id = R.string.gallery_date_today)
+    val yesterdayLabel = stringResource(id = R.string.gallery_date_yesterday)
+    val photoSections = remember(uiState.photos, locale, todayLabel, yesterdayLabel) {
+        groupPhotosByDay(
+            photos = uiState.photos,
+            todayLabel = todayLabel,
+            yesterdayLabel = yesterdayLabel,
+            locale = locale
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -289,17 +312,27 @@ private fun GalleryScreen(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(
-                            items = uiState.photos,
-                            key = { it.id },
-                            contentType = { "photo" }
-                        ) { photo ->
-                            PhotoGridItem(
-                                photo = photo,
-                                isSelected = photo.id in uiState.selectedPhotoIds,
-                                onClick = { onPhotoClick(photo) },
-                                onLongClick = { onPhotoLongClick(photo) }
-                            )
+                        photoSections.forEach { section ->
+                            item(
+                                key = "header_${section.day.toEpochDay()}",
+                                span = { GridItemSpan(maxLineSpan) },
+                                contentType = "day_header"
+                            ) {
+                                DaySectionHeader(label = section.label)
+                            }
+
+                            items(
+                                items = section.photos,
+                                key = { it.id },
+                                contentType = { "photo" }
+                            ) { photo ->
+                                PhotoGridItem(
+                                    photo = photo,
+                                    isSelected = photo.id in uiState.selectedPhotoIds,
+                                    onClick = { onPhotoClick(photo) },
+                                    onLongClick = { onPhotoLongClick(photo) }
+                                )
+                            }
                         }
                     }
                 }
@@ -314,6 +347,17 @@ private fun GalleryScreen(
             }
         }
     }
+}
+
+@Composable
+private fun DaySectionHeader(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 8.dp)
+    )
 }
 
 @Composable
