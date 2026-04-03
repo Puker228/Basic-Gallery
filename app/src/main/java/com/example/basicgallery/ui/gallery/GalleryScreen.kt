@@ -26,8 +26,10 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -47,6 +49,8 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -64,7 +68,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -133,8 +136,6 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var hasPermission by remember { mutableStateOf(context.hasGalleryReadPermission()) }
     var permissionRequestStarted by rememberSaveable { mutableStateOf(false) }
     var selectedMediaUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedMediaDateTakenMillis by rememberSaveable { mutableLongStateOf(0L) }
-    var selectedMediaTypeName by rememberSaveable { mutableStateOf(MediaType.PHOTO.name) }
     var selectedMediaOpenedFromTrash by rememberSaveable { mutableStateOf(false) }
     var currentTabName by rememberSaveable { mutableStateOf(GalleryTab.PHOTOS.name) }
     val currentTab = GalleryTab.valueOf(currentTabName)
@@ -264,11 +265,13 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 
     Surface(modifier = Modifier.fillMaxSize()) {
         val openedMediaUri = selectedMediaUri
-        val openedMediaType = runCatching {
-            MediaType.valueOf(selectedMediaTypeName)
-        }.getOrDefault(MediaType.PHOTO)
         when {
             openedMediaUri != null -> {
+                val currentMedia = if (selectedMediaOpenedFromTrash) {
+                    uiState.trashPhotos
+                } else {
+                    uiState.photos
+                }
                 val onDeleteRequest: ((Uri) -> Unit)? = if (selectedMediaOpenedFromTrash) {
                     null
                 } else {
@@ -281,22 +284,16 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                 }
                 val mediaUri = Uri.parse(openedMediaUri)
 
-                when (openedMediaType) {
-                    MediaType.PHOTO -> FullscreenPhotoScreen(
-                        photoUri = mediaUri,
-                        dateTakenMillis = selectedMediaDateTakenMillis,
-                        onBack = { selectedMediaUri = null },
-                        onEdit = { launchEditPhoto(mediaUri) },
-                        onDelete = onDeleteRequest
-                    )
-
-                    MediaType.VIDEO -> FullscreenVideoScreen(
-                        videoUri = mediaUri,
-                        dateTakenMillis = selectedMediaDateTakenMillis,
-                        onBack = { selectedMediaUri = null },
-                        onDelete = onDeleteRequest
-                    )
-                }
+                FullscreenMediaScreen(
+                    mediaItems = currentMedia,
+                    initialMediaUri = mediaUri,
+                    onBack = { selectedMediaUri = null },
+                    onEditPhoto = { uri -> launchEditPhoto(uri) },
+                    onDelete = onDeleteRequest,
+                    onCurrentMediaChanged = { currentMediaItem ->
+                        selectedMediaUri = currentMediaItem.contentUri.toString()
+                    }
+                )
             }
 
             !hasPermission -> {
@@ -328,8 +325,6 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                             viewModel.toggleSelection(photo.id)
                         } else {
                             selectedMediaUri = photo.contentUri.toString()
-                            selectedMediaDateTakenMillis = photo.dateTakenMillis
-                            selectedMediaTypeName = photo.mediaType.name
                             selectedMediaOpenedFromTrash = currentTab == GalleryTab.TRASH
                         }
                     },
@@ -832,32 +827,46 @@ private fun rememberMediaImageLoader(): ImageLoader {
 }
 
 @Composable
-private fun FullscreenPhotoScreen(
-    photoUri: Uri,
-    dateTakenMillis: Long,
+private fun FullscreenMediaScreen(
+    mediaItems: List<PhotoItem>,
+    initialMediaUri: Uri,
     onBack: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: ((Uri) -> Unit)?
+    onEditPhoto: (Uri) -> Unit,
+    onDelete: ((Uri) -> Unit)?,
+    onCurrentMediaChanged: (PhotoItem) -> Unit
 ) {
     BackHandler(onBack = onBack)
 
-    val context = LocalContext.current
-    val density = LocalDensity.current
-    val dateTimeLabel = rememberMediaDateTimeLabel(dateTakenMillis = dateTakenMillis)
-    var scale by remember(photoUri) { mutableFloatStateOf(1f) }
-    var translation by remember(photoUri) { mutableStateOf(Offset.Zero) }
-    val doubleTapScale = 2.5f
+    if (mediaItems.isEmpty()) {
+        LaunchedEffect(Unit) {
+            onBack()
+        }
+        return
+    }
 
-    fun clampTranslation(currentScale: Float, currentTranslation: Offset, width: Float, height: Float): Offset {
-        if (currentScale <= 1f) return Offset.Zero
-
-        val maxX = ((currentScale - 1f) * width) / 2f
-        val maxY = ((currentScale - 1f) * height) / 2f
-
-        return Offset(
-            x = currentTranslation.x.coerceIn(-maxX, maxX),
-            y = currentTranslation.y.coerceIn(-maxY, maxY)
-        )
+    val initialPage = remember(mediaItems, initialMediaUri) {
+        mediaItems.indexOfFirst { it.contentUri == initialMediaUri }
+    }
+    if (initialPage < 0) {
+        LaunchedEffect(initialMediaUri, mediaItems.size) {
+            onBack()
+        }
+        return
+    }
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { mediaItems.size }
+    )
+    LaunchedEffect(mediaItems.size) {
+        val lastIndex = mediaItems.lastIndex
+        if (lastIndex >= 0 && pagerState.currentPage > lastIndex) {
+            pagerState.scrollToPage(lastIndex)
+        }
+    }
+    val currentMedia = mediaItems[pagerState.currentPage.coerceIn(0, mediaItems.lastIndex)]
+    val dateTimeLabel = rememberMediaDateTimeLabel(dateTakenMillis = currentMedia.dateTakenMillis)
+    LaunchedEffect(currentMedia.id) {
+        onCurrentMediaChanged(currentMedia)
     }
 
     Scaffold(
@@ -882,169 +891,202 @@ private fun FullscreenPhotoScreen(
                         .fillMaxWidth()
                         .padding(vertical = 8.dp)
                 ) {
-                    TextButton(onClick = onEdit) {
-                        Text(text = stringResource(id = R.string.edit))
-                    }
-                    TextButton(
-                        onClick = { onDelete?.invoke(photoUri) },
-                        enabled = onDelete != null
-                    ) {
-                        Text(text = stringResource(id = R.string.delete))
+                    if (currentMedia.mediaType == MediaType.PHOTO) {
+                        TextButton(onClick = { onEditPhoto(currentMedia.contentUri) }) {
+                            Text(text = stringResource(id = R.string.edit))
+                        }
+                        TextButton(
+                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                            enabled = onDelete != null
+                        ) {
+                            Text(text = stringResource(id = R.string.delete))
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                        TextButton(
+                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                            enabled = onDelete != null
+                        ) {
+                            Text(text = stringResource(id = R.string.delete))
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
         }
     ) { innerPadding ->
-        BoxWithConstraints(
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.scrim)
-        ) {
-            val widthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
-            val heightPx = with(density) { maxHeight.roundToPx().coerceAtLeast(1) }
-            val width = widthPx.toFloat()
-            val height = heightPx.toFloat()
-            val request = remember(photoUri, context, widthPx, heightPx) {
-                ImageRequest.Builder(context)
-                    .data(photoUri)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .memoryCachePolicy(CachePolicy.ENABLED)
-                    .precision(Precision.EXACT)
-                    .crossfade(false)
-                    .allowHardware(true)
-                    .size(widthPx, heightPx)
-                    .build()
+        ) { page ->
+            val item = mediaItems[page]
+            when (item.mediaType) {
+                MediaType.PHOTO -> FullscreenPhotoPage(photoUri = item.contentUri)
+                MediaType.VIDEO -> FullscreenVideoPage(
+                    videoUri = item.contentUri,
+                    isCurrentPage = page == pagerState.currentPage
+                )
             }
-
-            AsyncImage(
-                model = request,
-                contentDescription = stringResource(id = R.string.photo_content_description),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clipToBounds()
-                    .pointerInput(photoUri, widthPx, heightPx) {
-                        detectTapGestures(
-                            onDoubleTap = { tapOffset ->
-                                if (scale > 1f) {
-                                    scale = 1f
-                                    translation = Offset.Zero
-                                } else {
-                                    val center = Offset(width / 2f, height / 2f)
-                                    val delta = tapOffset - center
-                                    val targetScale = doubleTapScale
-                                    val targetTranslation = Offset(
-                                        x = -delta.x * (targetScale - 1f),
-                                        y = -delta.y * (targetScale - 1f)
-                                    )
-
-                                    scale = targetScale
-                                    translation = clampTranslation(
-                                        currentScale = targetScale,
-                                        currentTranslation = targetTranslation,
-                                        width = width,
-                                        height = height
-                                    )
-                                }
-                            }
-                        )
-                    }
-                    .pointerInput(photoUri, widthPx, heightPx) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            val updatedScale = (scale * zoom).coerceIn(1f, 5f)
-                            val updatedTranslation = clampTranslation(
-                                currentScale = updatedScale,
-                                currentTranslation = translation + pan,
-                                width = width,
-                                height = height
-                            )
-
-                            scale = updatedScale
-                            translation = updatedTranslation
-                        }
-                    }
-                    .graphicsLayer {
-                        transformOrigin = TransformOrigin.Center
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = translation.x
-                        translationY = translation.y
-                    }
-            )
         }
     }
 }
 
 @Composable
-private fun FullscreenVideoScreen(
-    videoUri: Uri,
-    dateTakenMillis: Long,
-    onBack: () -> Unit,
-    onDelete: ((Uri) -> Unit)?
-) {
-    BackHandler(onBack = onBack)
+private fun FullscreenPhotoPage(photoUri: Uri) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    var scale by remember(photoUri) { mutableFloatStateOf(1f) }
+    var translation by remember(photoUri) { mutableStateOf(Offset.Zero) }
+    val doubleTapScale = 2.5f
 
-    val dateTimeLabel = rememberMediaDateTimeLabel(dateTakenMillis = dateTakenMillis)
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(text = dateTimeLabel) },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text(text = stringResource(id = R.string.back))
-                    }
-                }
-            )
-        },
-        bottomBar = {
-            Surface(
-                tonalElevation = 3.dp,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    TextButton(
-                        onClick = { onDelete?.invoke(videoUri) },
-                        enabled = onDelete != null
-                    ) {
-                        Text(text = stringResource(id = R.string.delete))
-                    }
-                }
-            }
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        val widthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
+        val heightPx = with(density) { maxHeight.roundToPx().coerceAtLeast(1) }
+        val width = widthPx.toFloat()
+        val height = heightPx.toFloat()
+        val request = remember(photoUri, context, widthPx, heightPx) {
+            ImageRequest.Builder(context)
+                .data(photoUri)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .precision(Precision.EXACT)
+                .crossfade(false)
+                .allowHardware(true)
+                .size(widthPx, heightPx)
+                .build()
         }
-    ) { innerPadding ->
-        Box(
-            contentAlignment = Alignment.Center,
+        val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+            val updatedScale = (scale * zoomChange).coerceIn(1f, 5f)
+            val targetTranslation = if (updatedScale <= 1f) {
+                Offset.Zero
+            } else {
+                translation + panChange
+            }
+            scale = updatedScale
+            translation = clampTranslation(
+                currentScale = updatedScale,
+                currentTranslation = targetTranslation,
+                width = width,
+                height = height
+            )
+        }
+
+        AsyncImage(
+            model = request,
+            contentDescription = stringResource(id = R.string.photo_content_description),
+            contentScale = ContentScale.Fit,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.scrim)
-        ) {
-            key(videoUri) {
-                AndroidView(
-                    factory = { context ->
-                        VideoView(context).apply {
-                            val controller = MediaController(context).also {
-                                it.setAnchorView(this)
-                            }
-                            setMediaController(controller)
-                            setVideoURI(videoUri)
-                            setOnPreparedListener { mediaPlayer ->
-                                mediaPlayer.isLooping = false
-                                start()
+                .clipToBounds()
+                .pointerInput(photoUri, widthPx, heightPx) {
+                    detectTapGestures(
+                        onDoubleTap = { tapOffset ->
+                            if (scale > 1f) {
+                                scale = 1f
+                                translation = Offset.Zero
+                            } else {
+                                val center = Offset(width / 2f, height / 2f)
+                                val delta = tapOffset - center
+                                val targetScale = doubleTapScale
+                                val targetTranslation = Offset(
+                                    x = -delta.x * (targetScale - 1f),
+                                    y = -delta.y * (targetScale - 1f)
+                                )
+
+                                scale = targetScale
+                                translation = clampTranslation(
+                                    currentScale = targetScale,
+                                    currentTranslation = targetTranslation,
+                                    width = width,
+                                    height = height
+                                )
                             }
                         }
-                    },
-                    modifier = Modifier.fillMaxSize()
+                    )
+                }
+                .pointerInput(photoUri, scale, widthPx, heightPx) {
+                    if (scale <= 1f) return@pointerInput
+
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        translation = clampTranslation(
+                            currentScale = scale,
+                            currentTranslation = translation + Offset(dragAmount.x, dragAmount.y),
+                            width = width,
+                            height = height
+                        )
+                    }
+                }
+                .transformable(
+                    state = transformableState,
+                    canPan = { scale > 1f }
                 )
-            }
-        }
+                .graphicsLayer {
+                    transformOrigin = TransformOrigin.Center
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = translation.x
+                    translationY = translation.y
+                }
+        )
+    }
+}
+
+private fun clampTranslation(
+    currentScale: Float,
+    currentTranslation: Offset,
+    width: Float,
+    height: Float
+): Offset {
+    if (currentScale <= 1f) return Offset.Zero
+
+    val maxX = ((currentScale - 1f) * width) / 2f
+    val maxY = ((currentScale - 1f) * height) / 2f
+
+    return Offset(
+        x = currentTranslation.x.coerceIn(-maxX, maxX),
+        y = currentTranslation.y.coerceIn(-maxY, maxY)
+    )
+}
+
+@Composable
+private fun FullscreenVideoPage(
+    videoUri: Uri,
+    isCurrentPage: Boolean
+) {
+    key(videoUri) {
+        AndroidView(
+            factory = { context ->
+                VideoView(context).apply {
+                    val controller = MediaController(context).also {
+                        it.setAnchorView(this)
+                    }
+                    setMediaController(controller)
+                    setVideoURI(videoUri)
+                    setOnPreparedListener { mediaPlayer ->
+                        mediaPlayer.isLooping = false
+                        if (isCurrentPage) {
+                            start()
+                        }
+                    }
+                }
+            },
+            update = { view ->
+                if (isCurrentPage) {
+                    if (!view.isPlaying) {
+                        view.start()
+                    }
+                } else if (view.isPlaying) {
+                    view.pause()
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
