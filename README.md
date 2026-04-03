@@ -8,13 +8,14 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 - Loads photos and trash photos from `MediaStore`, sorted by capture date.
 - Top app bar section switcher with dropdown (`Photos` / `Trash`) and arrow indicator.
 - Groups photos by day with localized section labels (for example, Today/Yesterday).
+- Pull-down reveal shows section media counters (`Photos: X • Videos: Y`).
+- Day headers in Photos include a right-aligned `Select all` action for that date.
 - Displays photos in a 3-column grid and supports full-screen photo viewing.
 - Photos section: multi-select and move to trash.
 - Trash section:
   - Title shows total size of photos in trash (`Trash (228 MB)` style).
-  - Pull-down reveal shows media counters (`Photos: X • Videos: Y` for trash).
   - Top-right `Delete all` action for all trash photos.
-  - Multi-select bottom actions: `Restore` and `Delete`.
+  - In selection mode, top app bar `Actions` menu provides `Restore` and `Delete`.
 - Uses `MediaStore.createTrashRequest(..., false)` for restore and `MediaStore.createDeleteRequest(...)` for permanent delete on Android 11+.
 
 ## Tech Stack

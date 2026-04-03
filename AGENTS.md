@@ -18,11 +18,15 @@ Current main-screen behavior (keep docs and code aligned when changing it):
 
 - Section switcher is in the top app bar title area as a dropdown with arrow icon.
 - Available sections: `Фото/Photos` and `Корзина/Trash`.
-- Trash title includes total photo size in brackets (`Корзина (228 МБ)` style).
+- Photos are grouped by date with localized labels (Today/Yesterday and local date format).
 - Pull-down reveal shows section media counters (`Фото: X • Видео: Y` / `Photos: X • Videos: Y`).
+- Media is shown in a 3-column grid with full-screen photo viewer.
+- In `Фото/Photos`, multi-select moves chosen photos to trash.
+- Trash title includes total photo size in brackets (`Корзина (228 МБ)` style).
+- In `Фото/Photos`, each day header includes a right-aligned `Выбрать всё/Select all` action that selects all photos for that date.
 - Trash supports:
   - `Delete all` action in top-right corner.
-  - Multi-select with bottom actions `Restore` and `Delete`.
+  - In selection mode, top app bar `Actions` menu with `Restore` and `Delete`.
   - Restore via MediaStore untrash API and permanent delete via MediaStore delete API (Android 11+).
 
 ## Build, Test, and Development Commands

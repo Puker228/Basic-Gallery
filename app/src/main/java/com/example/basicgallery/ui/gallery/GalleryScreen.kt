@@ -275,6 +275,9 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     onPhotoLongClick = { photo ->
                         viewModel.startSelection(photo.id)
                     },
+                    onSelectPhotos = { photoIds ->
+                        viewModel.selectPhotos(photoIds)
+                    },
                     onDeleteSelected = {
                         val selectedUris = uiState.photos
                             .asSequence()
@@ -324,6 +327,7 @@ private fun GalleryScreen(
     onTabSelected: (GalleryTab) -> Unit,
     onPhotoClick: (PhotoItem) -> Unit,
     onPhotoLongClick: (PhotoItem) -> Unit,
+    onSelectPhotos: (Collection<Long>) -> Unit,
     onDeleteSelected: () -> Unit,
     onRestoreSelected: () -> Unit,
     onDeleteSelectedFromTrash: () -> Unit,
@@ -505,7 +509,16 @@ private fun GalleryScreen(
                                 span = { GridItemSpan(maxLineSpan) },
                                 contentType = "day_header"
                             ) {
-                                DaySectionHeader(label = section.label)
+                                DaySectionHeader(
+                                    label = section.label,
+                                    showSelectAll = !isTrashTab,
+                                    isSelectAllEnabled = section.photos.any { photo ->
+                                        photo.id !in uiState.selectedPhotoIds
+                                    },
+                                    onSelectAll = {
+                                        onSelectPhotos(section.photos.map { photo -> photo.id })
+                                    }
+                                )
                             }
 
                             items(
@@ -640,14 +653,32 @@ private fun TrashSelectionPopupMenu(
 }
 
 @Composable
-private fun DaySectionHeader(label: String) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+private fun DaySectionHeader(
+    label: String,
+    showSelectAll: Boolean,
+    isSelectAllEnabled: Boolean,
+    onSelectAll: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 6.dp, vertical = 8.dp)
-    )
+            .padding(start = 6.dp, end = 2.dp, top = 8.dp, bottom = 8.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        if (showSelectAll) {
+            TextButton(
+                onClick = onSelectAll,
+                enabled = isSelectAllEnabled
+            ) {
+                Text(text = stringResource(id = R.string.select_all))
+            }
+        }
+    }
 }
 
 @Composable

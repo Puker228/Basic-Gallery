@@ -100,6 +100,18 @@ class GalleryViewModelTest {
     }
 
     @Test
+    fun selectPhotos_addsAllIdsWithoutLosingExistingSelection() {
+        val repository = FakeGalleryRepository()
+        val viewModel = GalleryViewModel(repository)
+
+        viewModel.startSelection(1L)
+        viewModel.selectPhotos(listOf(2L, 3L, 1L))
+        viewModel.selectPhotos(emptyList())
+
+        assertEquals(setOf(1L, 2L, 3L), viewModel.uiState.value.selectedPhotoIds)
+    }
+
+    @Test
     fun createRequests_delegateToRepositoryWithExpectedFlags() {
         val repository = FakeGalleryRepository()
         val viewModel = GalleryViewModel(repository)
