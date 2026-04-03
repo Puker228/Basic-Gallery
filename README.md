@@ -11,6 +11,7 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 - Pull-down reveal shows section media counters (`Photos: X • Videos: Y`).
 - Day headers in Photos include a right-aligned `Select all` action for that date.
 - Displays media in a 3-column grid.
+- Video thumbnails use the first video frame and show duration at bottom-right (`MM:SS`, or `HH:MM:SS` for videos 1 hour+).
 - Full-screen photo view shows capture date/time and bottom actions (`Edit`, `Delete`).
 - Full-screen video view shows capture date/time, has a simple player, and bottom `Delete` action.
 - Photos section: multi-select and move to trash.
