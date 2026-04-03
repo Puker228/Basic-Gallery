@@ -3,6 +3,8 @@ package com.example.basicgallery.ui.gallery
 import android.content.IntentSender
 import android.net.Uri
 import com.example.basicgallery.data.GalleryRepository
+import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
@@ -166,6 +168,7 @@ private class FakeGalleryRepository(
 
     var trashRequestResult: IntentSender? = null
     var deleteRequestResult: IntentSender? = null
+    var saveEditedPhotoResult: Uri = mock(Uri::class.java)
 
     override suspend fun loadPhotos(): List<PhotoItem> {
         loadPhotosCalls += 1
@@ -195,5 +198,13 @@ private class FakeGalleryRepository(
     override fun createDeleteRequest(photoUris: Collection<Uri>): IntentSender? {
         deleteRequests += photoUris.toList()
         return deleteRequestResult
+    }
+
+    override suspend fun saveEditedPhoto(
+        sourcePhoto: PhotoItem,
+        adjustments: PhotoAdjustments,
+        crop: PhotoCrop
+    ): Uri {
+        return saveEditedPhotoResult
     }
 }

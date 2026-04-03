@@ -7,7 +7,6 @@ package com.example.basicgallery.ui.gallery
 
 import android.Manifest
 import android.app.Activity
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -142,6 +141,9 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var permissionRequestStarted by rememberSaveable { mutableStateOf(false) }
     var selectedMediaUri by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedMediaOpenedFromTrash by rememberSaveable { mutableStateOf(false) }
+    var editorPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var editorPhotoId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var editorPhotoDateTakenMillis by rememberSaveable { mutableStateOf<Long?>(null) }
     var currentTabName by rememberSaveable { mutableStateOf(GalleryTab.PHOTOS.name) }
     val currentTab = GalleryTab.valueOf(currentTabName)
     var pendingMediaRequest by remember { mutableStateOf<PendingMediaRequest?>(null) }
@@ -219,28 +221,6 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         )
     }
 
-    fun launchEditPhoto(photoUri: Uri) {
-        val editIntent = Intent(Intent.ACTION_EDIT).apply {
-            setDataAndType(photoUri, "image/*")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            if (context !is Activity) {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-        }
-
-        runCatching {
-            context.startActivity(editIntent)
-        }.onFailure { throwable ->
-            val messageRes = if (throwable is ActivityNotFoundException) {
-                R.string.edit_not_supported
-            } else {
-                R.string.edit_failed
-            }
-            Toast.makeText(context, messageRes, Toast.LENGTH_SHORT).show()
-        }
-    }
-
     DisposableEffect(lifecycleOwner, permissions) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -270,7 +250,37 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 
     Surface(modifier = Modifier.fillMaxSize()) {
         val openedMediaUri = selectedMediaUri
+        val editingPhotoUriValue = editorPhotoUri
+        val editingPhotoIdValue = editorPhotoId
+        val editingPhotoDateValue = editorPhotoDateTakenMillis
         when {
+            editingPhotoUriValue != null &&
+                    editingPhotoIdValue != null &&
+                    editingPhotoDateValue != null -> {
+                PhotoEditorScreen(
+                    sourcePhoto = PhotoItem(
+                        id = editingPhotoIdValue,
+                        contentUri = Uri.parse(editingPhotoUriValue),
+                        dateTakenMillis = editingPhotoDateValue,
+                        mediaType = MediaType.PHOTO
+                    ),
+                    onBack = {
+                        editorPhotoUri = null
+                        editorPhotoId = null
+                        editorPhotoDateTakenMillis = null
+                    },
+                    onSavePhoto = { sourcePhoto, adjustments, crop ->
+                        viewModel.saveEditedPhoto(sourcePhoto, adjustments, crop)
+                    },
+                    onSaved = {
+                        editorPhotoUri = null
+                        editorPhotoId = null
+                        editorPhotoDateTakenMillis = null
+                        viewModel.loadPhotos(forceRefresh = true)
+                    }
+                )
+            }
+
             openedMediaUri != null -> {
                 val currentMedia = if (selectedMediaOpenedFromTrash) {
                     uiState.trashPhotos
@@ -293,7 +303,11 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     mediaItems = currentMedia,
                     initialMediaUri = mediaUri,
                     onBack = { selectedMediaUri = null },
-                    onEditPhoto = { uri -> launchEditPhoto(uri) },
+                    onEditPhoto = { media ->
+                        editorPhotoUri = media.contentUri.toString()
+                        editorPhotoId = media.id
+                        editorPhotoDateTakenMillis = media.dateTakenMillis
+                    },
                     onDelete = onDeleteRequest,
                     onCurrentMediaChanged = { currentMediaItem ->
                         selectedMediaUri = currentMediaItem.contentUri.toString()
@@ -824,7 +838,7 @@ private fun FullscreenMediaScreen(
     mediaItems: List<PhotoItem>,
     initialMediaUri: Uri,
     onBack: () -> Unit,
-    onEditPhoto: (Uri) -> Unit,
+    onEditPhoto: (PhotoItem) -> Unit,
     onDelete: ((Uri) -> Unit)?,
     onCurrentMediaChanged: (PhotoItem) -> Unit
 ) {
@@ -885,7 +899,7 @@ private fun FullscreenMediaScreen(
                         .padding(vertical = 8.dp)
                 ) {
                     if (currentMedia.mediaType == MediaType.PHOTO) {
-                        TextButton(onClick = { onEditPhoto(currentMedia.contentUri) }) {
+                        TextButton(onClick = { onEditPhoto(currentMedia) }) {
                             Text(text = stringResource(id = R.string.edit))
                         }
                         TextButton(
