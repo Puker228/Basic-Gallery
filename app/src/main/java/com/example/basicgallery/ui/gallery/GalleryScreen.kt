@@ -45,12 +45,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -77,6 +78,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -423,7 +425,11 @@ private fun GalleryScreen(
                             )
                         )
                     } else {
-                        Text(text = defaultTitle)
+                        GallerySectionMenu(
+                            currentTitle = defaultTitle,
+                            onOpenPhotos = { onTabSelected(GalleryTab.PHOTOS) },
+                            onOpenTrash = { onTabSelected(GalleryTab.TRASH) }
+                        )
                     }
                 },
                 actions = {
@@ -449,18 +455,6 @@ private fun GalleryScreen(
                     }
                 }
             )
-            TabRow(selectedTabIndex = currentTab.ordinal) {
-                Tab(
-                    selected = currentTab == GalleryTab.PHOTOS,
-                    onClick = { onTabSelected(GalleryTab.PHOTOS) },
-                    text = { Text(text = stringResource(id = R.string.tab_photos)) }
-                )
-                Tab(
-                    selected = currentTab == GalleryTab.TRASH,
-                    onClick = { onTabSelected(GalleryTab.TRASH) },
-                    text = { Text(text = stringResource(id = R.string.tab_trash)) }
-                )
-            }
         },
         bottomBar = {
             if (uiState.isSelectionMode && isTrashTab) {
@@ -577,6 +571,53 @@ private fun GalleryScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun GallerySectionMenu(
+    currentTitle: String,
+    onOpenPhotos: () -> Unit,
+    onOpenTrash: () -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    val photosLabel = stringResource(id = R.string.tab_photos)
+    val trashLabel = stringResource(id = R.string.tab_trash)
+
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.combinedClickable(
+                onClick = { isExpanded = true },
+                onLongClick = { isExpanded = true }
+            )
+        ) {
+            Text(text = currentTitle)
+            Icon(
+                painter = painterResource(id = R.drawable.ic_arrow_drop_down),
+                contentDescription = null
+            )
+        }
+
+        DropdownMenu(
+            expanded = isExpanded,
+            onDismissRequest = { isExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = photosLabel) },
+                onClick = {
+                    isExpanded = false
+                    onOpenPhotos()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(text = trashLabel) },
+                onClick = {
+                    isExpanded = false
+                    onOpenTrash()
+                }
+            )
         }
     }
 }
