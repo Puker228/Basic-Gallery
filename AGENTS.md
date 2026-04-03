@@ -20,7 +20,17 @@ Current main-screen behavior (keep docs and code aligned when changing it):
 - Available sections: `Фото/Photos` and `Корзина/Trash`.
 - Photos are grouped by date with localized labels (Today/Yesterday and local date format).
 - Pull-down reveal shows section media counters (`Фото: X • Видео: Y` / `Photos: X • Videos: Y`).
-- Media is shown in a 3-column grid with full-screen photo viewer.
+- Media is shown in a 3-column grid (photos and videos).
+- Video cells use the first frame as preview and show duration badge at bottom-right:
+  - `MM:SS` for videos shorter than 1 hour.
+  - `HH:MM:SS` for videos 1 hour or longer.
+- Full-screen photo viewer:
+  - Top bar shows photo creation date/time.
+  - Bottom actions: `Edit` and `Delete`.
+- Full-screen video viewer:
+  - Top bar shows video creation date/time.
+  - Uses a simple inline player.
+  - Bottom action: `Delete`.
 - In `Фото/Photos`, multi-select moves chosen photos to trash.
 - Trash title includes total photo size in brackets (`Корзина (228 МБ)` style).
 - In `Фото/Photos`, each day header includes a right-aligned `Выбрать всё/Select all` action that selects all photos for that date.

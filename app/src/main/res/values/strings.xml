@@ -11,6 +11,9 @@
     <string name="permission_settings_button">Open settings</string>
     <string name="photo_screen_title">Photo</string>
     <string name="photo_content_description">Selected photo</string>
+    <string name="edit">Edit</string>
+    <string name="edit_not_supported">No app found to edit this photo.</string>
+    <string name="edit_failed">Unable to open the photo editor.</string>
     <string name="retry">Retry</string>
     <string name="back">Back</string>
     <string name="delete">Delete</string>
