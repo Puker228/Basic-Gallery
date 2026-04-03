@@ -132,7 +132,12 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     DisposableEffect(lifecycleOwner, permissions) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                hasPermission = context.hasAnyPermission(permissions)
+                val hasPermissionNow = context.hasAnyPermission(permissions)
+                hasPermission = hasPermissionNow
+
+                if (hasPermissionNow) {
+                    viewModel.loadPhotos(forceRefresh = true)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
