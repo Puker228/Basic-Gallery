@@ -83,4 +83,32 @@ class MediaStoreGalleryRepository(
 
         photos
     }
+
+    override suspend fun loadVideoCount(): Int = withContext(Dispatchers.IO) {
+        runCatching {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+            } else {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                "${MediaStore.Video.Media.IS_PENDING} = 0"
+            } else {
+                null
+            }
+
+            queryItemCount(collection = collection, selection = selection)
+        }.getOrDefault(0)
+    }
+
+    private fun queryItemCount(collection: Uri, selection: String?): Int {
+        return contentResolver.query(
+            collection,
+            arrayOf(MediaStore.MediaColumns._ID),
+            selection,
+            null,
+            null
+        )?.count ?: 0
+    }
 }
