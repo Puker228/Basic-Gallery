@@ -31,9 +31,9 @@ object PhotoEditingProcessor {
         val sourcePixels = IntArray(width * height)
         croppedBitmap.getPixels(sourcePixels, 0, width, 0, 0, width, height)
 
-        val toneAdjustedPixels = applyToneAdjustments(sourcePixels, adjustments)
+        applyToneAdjustmentsInPlace(sourcePixels, adjustments)
         val outputPixels = applySharpness(
-            pixels = toneAdjustedPixels,
+            pixels = sourcePixels,
             width = width,
             height = height,
             strength = adjustments.sharpness.coerceIn(0f, 1f)
@@ -72,18 +72,17 @@ object PhotoEditingProcessor {
         return Bitmap.createBitmap(source, leftPx, topPx, width, height)
     }
 
-    private fun applyToneAdjustments(
-        sourcePixels: IntArray,
+    private fun applyToneAdjustmentsInPlace(
+        pixels: IntArray,
         adjustments: PhotoAdjustments
-    ): IntArray {
+    ) {
         val exposure = adjustments.exposure.coerceIn(-2f, 2f)
         val exposureFactor = 2.0.pow(exposure.toDouble()).toFloat()
         val contrastFactor = (1f + adjustments.contrast).coerceAtLeast(0f)
         val brightnessOffset = adjustments.brightness.coerceIn(-1f, 1f) * 255f
-        val adjusted = IntArray(sourcePixels.size)
 
-        for (index in sourcePixels.indices) {
-            val color = sourcePixels[index]
+        for (index in pixels.indices) {
+            val color = pixels[index]
             val alpha = (color ushr 24) and 0xFF
             val red = (color ushr 16) and 0xFF
             val green = (color ushr 8) and 0xFF
@@ -93,13 +92,11 @@ object PhotoEditingProcessor {
             val adjustedGreen = adjustColorChannel(green, exposureFactor, contrastFactor, brightnessOffset)
             val adjustedBlue = adjustColorChannel(blue, exposureFactor, contrastFactor, brightnessOffset)
 
-            adjusted[index] = (alpha shl 24) or
+            pixels[index] = (alpha shl 24) or
                     (adjustedRed shl 16) or
                     (adjustedGreen shl 8) or
                     adjustedBlue
         }
-
-        return adjusted
     }
 
     private fun applySharpness(

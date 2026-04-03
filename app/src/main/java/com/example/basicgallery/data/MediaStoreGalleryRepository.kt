@@ -366,9 +366,17 @@ class MediaStoreGalleryRepository(
         val source = ImageDecoder.createSource(contentResolver, uri)
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val width = info.size.width.coerceAtLeast(1)
+            val height = info.size.height.coerceAtLeast(1)
+            val targetSampleSize = calculateTargetSampleSize(
+                width = width,
+                height = height,
+                maxPixelCount = MAX_EDIT_DECODE_PIXEL_COUNT
+            )
+            if (targetSampleSize > 1) {
+                decoder.setTargetSampleSize(targetSampleSize)
+            }
             if (!normalizedCrop.isFullImage()) {
-                val width = info.size.width.coerceAtLeast(1)
-                val height = info.size.height.coerceAtLeast(1)
                 val left = (normalizedCrop.left * width).roundToInt().coerceIn(0, width - 1)
                 val top = (normalizedCrop.top * height).roundToInt().coerceIn(0, height - 1)
                 val right = (normalizedCrop.right * width).roundToInt().coerceIn(left + 1, width)
@@ -376,6 +384,19 @@ class MediaStoreGalleryRepository(
                 decoder.setCrop(Rect(left, top, right, bottom))
             }
         }
+    }
+
+    private fun calculateTargetSampleSize(
+        width: Int,
+        height: Int,
+        maxPixelCount: Long
+    ): Int {
+        if (maxPixelCount <= 0L) return 1
+        var sampleSize = 1
+        while ((width.toLong() / sampleSize) * (height.toLong() / sampleSize) > maxPixelCount) {
+            sampleSize *= 2
+        }
+        return sampleSize
     }
 
     private fun querySourceImageMetadata(uri: Uri): SourceImageMetadata {
@@ -463,6 +484,7 @@ class MediaStoreGalleryRepository(
 
     private companion object {
         const val JPEG_QUALITY = 95
+        const val MAX_EDIT_DECODE_PIXEL_COUNT = 12_000_000L
         const val MIME_TYPE_JPEG = "image/jpeg"
         const val MIME_TYPE_PNG = "image/png"
         const val MIME_TYPE_WEBP = "image/webp"

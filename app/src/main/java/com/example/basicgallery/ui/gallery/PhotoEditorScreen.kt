@@ -66,6 +66,8 @@ import com.example.basicgallery.data.model.PhotoAdjustments
 import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -74,6 +76,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 private const val PREVIEW_MAX_DIMENSION = 1600
+private const val PREVIEW_RECALC_DEBOUNCE_MS = 80L
 
 internal const val PHOTO_EDITOR_SAVE_BUTTON_TAG = "photo_editor_save_button"
 internal const val PHOTO_EDITOR_EXPOSURE_SLIDER_TAG = "photo_editor_exposure_slider"
@@ -167,8 +170,16 @@ internal fun PhotoEditorScreen(
             return@LaunchedEffect
         }
 
+        delay(PREVIEW_RECALC_DEBOUNCE_MS)
+
         val processedPreview = withContext(Dispatchers.Default) {
             PhotoEditingProcessor.applyAdjustments(original, adjustments)
+        }
+        if (!isActive) {
+            if (processedPreview !== original && !processedPreview.isRecycled) {
+                processedPreview.recycle()
+            }
+            return@LaunchedEffect
         }
         val oldPreview = previewBitmap
         previewBitmap = processedPreview
