@@ -434,7 +434,13 @@ private fun GalleryScreen(
                 },
                 actions = {
                     if (uiState.isSelectionMode) {
-                        if (!isTrashTab) {
+                        if (isTrashTab) {
+                            TrashSelectionPopupMenu(
+                                onRestoreSelected = onRestoreSelected,
+                                onDeleteSelected = onDeleteSelectedFromTrash,
+                                hasSelection = uiState.selectedCount > 0
+                            )
+                        } else {
                             TextButton(
                                 onClick = onDeleteSelected,
                                 enabled = uiState.selectedCount > 0
@@ -455,33 +461,6 @@ private fun GalleryScreen(
                     }
                 }
             )
-        },
-        bottomBar = {
-            if (uiState.isSelectionMode && isTrashTab) {
-                Surface(tonalElevation = 2.dp) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            onClick = onRestoreSelected,
-                            modifier = Modifier.weight(1f),
-                            enabled = uiState.selectedCount > 0
-                        ) {
-                            Text(text = stringResource(id = R.string.restore))
-                        }
-                        Button(
-                            onClick = onDeleteSelectedFromTrash,
-                            modifier = Modifier.weight(1f),
-                            enabled = uiState.selectedCount > 0
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
-                        }
-                    }
-                }
-            }
         }
     ) { innerPadding ->
         Box(
@@ -616,6 +595,44 @@ private fun GallerySectionMenu(
                 onClick = {
                     isExpanded = false
                     onOpenTrash()
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrashSelectionPopupMenu(
+    onRestoreSelected: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    hasSelection: Boolean
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Box {
+        TextButton(
+            onClick = { isExpanded = true },
+            enabled = hasSelection
+        ) {
+            Text(text = stringResource(id = R.string.actions))
+        }
+
+        DropdownMenu(
+            expanded = isExpanded,
+            onDismissRequest = { isExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = stringResource(id = R.string.restore)) },
+                onClick = {
+                    isExpanded = false
+                    onRestoreSelected()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(text = stringResource(id = R.string.delete)) },
+                onClick = {
+                    isExpanded = false
+                    onDeleteSelected()
                 }
             )
         }
