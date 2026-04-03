@@ -13,4 +13,6 @@
     <string name="cancel">Cancel</string>
     <string name="gallery_selected_count">Selected: %1$d</string>
     <string name="trash_not_supported">Trash is available on Android 11 and newer.</string>
+    <string name="gallery_date_today">Today</string>
+    <string name="gallery_date_yesterday">Yesterday</string>
 </resources>

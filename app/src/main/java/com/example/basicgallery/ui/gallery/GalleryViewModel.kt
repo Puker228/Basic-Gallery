@@ -31,9 +31,10 @@ class GalleryViewModel(
             runCatching { repository.loadPhotos() }
                 .onSuccess { photos ->
                     val photoIds = photos.asSequence().map { it.id }.toSet()
-                    val retainedSelection = _uiState.value.selectedPhotoIds.filterTo(mutableSetOf()) { id ->
-                        id in photoIds
-                    }
+                    val retainedSelection =
+                        _uiState.value.selectedPhotoIds.filterTo(mutableSetOf()) { id ->
+                            id in photoIds
+                        }
                     _uiState.value = GalleryUiState(
                         isLoading = false,
                         photos = photos,

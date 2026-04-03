@@ -41,7 +41,7 @@ class MediaStoreGalleryRepository(
         }
 
         val sortOrder = "${MediaStore.Images.Media.DATE_TAKEN} DESC, " +
-            "${MediaStore.Images.Media.DATE_ADDED} DESC"
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
 
         val photos = ArrayList<PhotoItem>()
 

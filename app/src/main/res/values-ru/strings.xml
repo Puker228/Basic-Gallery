@@ -1,0 +1,4 @@
+<resources>
+    <string name="gallery_date_today">Сегодня</string>
+    <string name="gallery_date_yesterday">Вчера</string>
+</resources>
