@@ -10,6 +10,9 @@
     <string name="permission_settings_button">Открыть настройки</string>
     <string name="photo_screen_title">Фото</string>
     <string name="photo_content_description">Выбранное фото</string>
+    <string name="edit">Редактировать</string>
+    <string name="edit_not_supported">Не найдено приложение для редактирования фото.</string>
+    <string name="edit_failed">Не удалось открыть редактор фото.</string>
     <string name="retry">Повторить</string>
     <string name="back">Назад</string>
     <string name="delete">Удалить</string>

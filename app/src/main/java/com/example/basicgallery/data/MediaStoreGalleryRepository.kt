@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import com.example.basicgallery.data.model.MediaType
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,11 +31,11 @@ class MediaStoreGalleryRepository(
     }
 
     override suspend fun loadPhotos(): List<PhotoItem> = withContext(Dispatchers.IO) {
-        queryImages(onlyTrashed = false)
+        queryMedia(onlyTrashed = false)
     }
 
     override suspend fun loadTrashPhotos(): List<PhotoItem> = withContext(Dispatchers.IO) {
-        queryImages(onlyTrashed = true)
+        queryMedia(onlyTrashed = true)
     }
 
     override suspend fun loadVideoCount(): Int = withContext(Dispatchers.IO) {
@@ -47,6 +48,11 @@ class MediaStoreGalleryRepository(
         runCatching {
             queryVideoCount(onlyTrashed = true)
         }.getOrDefault(0)
+    }
+
+    private fun queryMedia(onlyTrashed: Boolean): List<PhotoItem> {
+        return (queryImages(onlyTrashed = onlyTrashed) + queryVideos(onlyTrashed = onlyTrashed))
+            .sortedByDescending { it.dateTakenMillis }
     }
 
     private fun queryImages(onlyTrashed: Boolean): List<PhotoItem> {
@@ -125,13 +131,101 @@ class MediaStoreGalleryRepository(
                         id = id,
                         contentUri = contentUri,
                         dateTakenMillis = normalizedDate,
-                        sizeBytes = sizeBytes
+                        sizeBytes = sizeBytes,
+                        mediaType = MediaType.PHOTO
                     )
                 )
             }
         }
 
         return photos
+    }
+
+    private fun queryVideos(onlyTrashed: Boolean): List<PhotoItem> {
+        if (onlyTrashed && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return emptyList()
+        }
+
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        } else {
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        }
+
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.DATE_TAKEN,
+            MediaStore.Video.Media.DATE_ADDED,
+            MediaStore.MediaColumns.SIZE
+        )
+
+        val sortOrder = "${MediaStore.Video.Media.DATE_TAKEN} DESC, " +
+                "${MediaStore.Video.Media.DATE_ADDED} DESC"
+
+        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            contentResolver.query(
+                collection,
+                projection,
+                buildQueryArgs(
+                    onlyTrashed = onlyTrashed,
+                    pendingColumn = MediaStore.Video.Media.IS_PENDING,
+                    sortOrder = sortOrder
+                ),
+                null
+            )
+        } else {
+            val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                "${MediaStore.Video.Media.IS_PENDING} = 0"
+            } else {
+                null
+            }
+            contentResolver.query(
+                collection,
+                projection,
+                selection,
+                null,
+                sortOrder
+            )
+        }
+
+        val videos = ArrayList<PhotoItem>()
+
+        cursor?.use { cursor ->
+            if (cursor.count > 0) {
+                videos.ensureCapacity(cursor.count)
+            }
+
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+            val dateTakenColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_TAKEN)
+            val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+
+            while (cursor.moveToNext()) {
+                val rawId = cursor.getLong(idColumn)
+                val dateTaken = cursor.getLong(dateTakenColumn)
+                val dateAdded = cursor.getLong(dateAddedColumn)
+                val sizeBytes = cursor.getLong(sizeColumn).coerceAtLeast(0L)
+                val normalizedDate = if (dateTaken > 0L) dateTaken else dateAdded * 1000L
+                val stableId = -(rawId + 1L)
+
+                val contentUri = ContentUris.withAppendedId(
+                    collection,
+                    rawId
+                )
+
+                videos.add(
+                    PhotoItem(
+                        id = stableId,
+                        contentUri = contentUri,
+                        dateTakenMillis = normalizedDate,
+                        sizeBytes = sizeBytes,
+                        mediaType = MediaType.VIDEO
+                    )
+                )
+            }
+        }
+
+        return videos
     }
 
     private fun queryVideoCount(onlyTrashed: Boolean): Int {

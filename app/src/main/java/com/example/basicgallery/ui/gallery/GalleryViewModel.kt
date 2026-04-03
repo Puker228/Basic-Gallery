@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.basicgallery.data.GalleryRepository
+import com.example.basicgallery.data.model.MediaType
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -55,11 +56,14 @@ class GalleryViewModel(
                         photos = photos.photos,
                         trashPhotos = photos.trashPhotos,
                         selectedPhotoIds = retainedSelection,
-                        photoCount = photos.photos.size,
+                        photoCount = photos.photos.count { it.mediaType == MediaType.PHOTO },
                         videoCount = photos.videoCount,
-                        trashPhotoCount = photos.trashPhotos.size,
+                        trashPhotoCount = photos.trashPhotos.count { it.mediaType == MediaType.PHOTO },
                         trashVideoCount = photos.trashVideoCount,
-                        trashSizeBytes = photos.trashPhotos.sumOf { it.sizeBytes }
+                        trashSizeBytes = photos.trashPhotos
+                            .asSequence()
+                            .filter { it.mediaType == MediaType.PHOTO }
+                            .sumOf { it.sizeBytes }
                     )
                 }
                 .onFailure { error ->

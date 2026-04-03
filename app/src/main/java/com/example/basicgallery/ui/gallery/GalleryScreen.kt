@@ -7,6 +7,7 @@ package com.example.basicgallery.ui.gallery
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -16,7 +17,9 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.text.format.Formatter
+import android.widget.MediaController
 import android.widget.Toast
+import android.widget.VideoView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -55,15 +58,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.Alignment
@@ -94,7 +100,12 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Precision
 import com.example.basicgallery.R
+import com.example.basicgallery.data.model.MediaType
 import com.example.basicgallery.data.model.PhotoItem
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.Locale
 
 private enum class GalleryTab {
@@ -115,8 +126,10 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 
     var hasPermission by remember { mutableStateOf(context.hasGalleryReadPermission()) }
     var permissionRequestStarted by rememberSaveable { mutableStateOf(false) }
-    var selectedPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedPhotoOpenedFromTrash by rememberSaveable { mutableStateOf(false) }
+    var selectedMediaUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedMediaDateTakenMillis by rememberSaveable { mutableLongStateOf(0L) }
+    var selectedMediaTypeName by rememberSaveable { mutableStateOf(MediaType.PHOTO.name) }
+    var selectedMediaOpenedFromTrash by rememberSaveable { mutableStateOf(false) }
     var currentTabName by rememberSaveable { mutableStateOf(GalleryTab.PHOTOS.name) }
     val currentTab = GalleryTab.valueOf(currentTabName)
     var pendingMediaRequest by remember { mutableStateOf<PendingMediaRequest?>(null) }
@@ -143,7 +156,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 
         if (result.resultCode == Activity.RESULT_OK && request != null) {
             if (request.closeViewerAfterSuccess) {
-                selectedPhotoUri = null
+                selectedMediaUri = null
             }
             viewModel.clearSelection()
             viewModel.loadPhotos(forceRefresh = true)
@@ -194,6 +207,28 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         )
     }
 
+    fun launchEditPhoto(photoUri: Uri) {
+        val editIntent = Intent(Intent.ACTION_EDIT).apply {
+            setDataAndType(photoUri, "image/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            if (context !is Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
+        runCatching {
+            context.startActivity(editIntent)
+        }.onFailure { throwable ->
+            val messageRes = if (throwable is ActivityNotFoundException) {
+                R.string.edit_not_supported
+            } else {
+                R.string.edit_failed
+            }
+            Toast.makeText(context, messageRes, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     DisposableEffect(lifecycleOwner, permissions) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -217,28 +252,45 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         }
     }
 
-    BackHandler(enabled = selectedPhotoUri == null && uiState.isSelectionMode) {
+    BackHandler(enabled = selectedMediaUri == null && uiState.isSelectionMode) {
         viewModel.clearSelection()
     }
 
     Surface(modifier = Modifier.fillMaxSize()) {
-        val openedPhotoUri = selectedPhotoUri
+        val openedMediaUri = selectedMediaUri
+        val openedMediaType = runCatching {
+            MediaType.valueOf(selectedMediaTypeName)
+        }.getOrDefault(MediaType.PHOTO)
         when {
-            openedPhotoUri != null -> {
-                FullscreenPhotoScreen(
-                    photoUri = Uri.parse(openedPhotoUri),
-                    onBack = { selectedPhotoUri = null },
-                    onDelete = if (selectedPhotoOpenedFromTrash) {
-                        null
-                    } else {
-                        { uri ->
-                            launchMoveToTrashRequest(
-                                photoUris = listOf(uri),
-                                closeViewerAfterSuccess = true
-                            )
-                        }
+            openedMediaUri != null -> {
+                val onDeleteRequest: ((Uri) -> Unit)? = if (selectedMediaOpenedFromTrash) {
+                    null
+                } else {
+                    { uri ->
+                        launchMoveToTrashRequest(
+                            photoUris = listOf(uri),
+                            closeViewerAfterSuccess = true
+                        )
                     }
-                )
+                }
+                val mediaUri = Uri.parse(openedMediaUri)
+
+                when (openedMediaType) {
+                    MediaType.PHOTO -> FullscreenPhotoScreen(
+                        photoUri = mediaUri,
+                        dateTakenMillis = selectedMediaDateTakenMillis,
+                        onBack = { selectedMediaUri = null },
+                        onEdit = { launchEditPhoto(mediaUri) },
+                        onDelete = onDeleteRequest
+                    )
+
+                    MediaType.VIDEO -> FullscreenVideoScreen(
+                        videoUri = mediaUri,
+                        dateTakenMillis = selectedMediaDateTakenMillis,
+                        onBack = { selectedMediaUri = null },
+                        onDelete = onDeleteRequest
+                    )
+                }
             }
 
             !hasPermission -> {
@@ -268,8 +320,10 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                         if (uiState.isSelectionMode) {
                             viewModel.toggleSelection(photo.id)
                         } else {
-                            selectedPhotoUri = photo.contentUri.toString()
-                            selectedPhotoOpenedFromTrash = currentTab == GalleryTab.TRASH
+                            selectedMediaUri = photo.contentUri.toString()
+                            selectedMediaDateTakenMillis = photo.dateTakenMillis
+                            selectedMediaTypeName = photo.mediaType.name
+                            selectedMediaOpenedFromTrash = currentTab == GalleryTab.TRASH
                         }
                     },
                     onPhotoLongClick = { photo ->
@@ -735,13 +789,16 @@ private fun PhotoGridItem(
 @Composable
 private fun FullscreenPhotoScreen(
     photoUri: Uri,
+    dateTakenMillis: Long,
     onBack: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: ((Uri) -> Unit)?
 ) {
     BackHandler(onBack = onBack)
 
     val context = LocalContext.current
     val density = LocalDensity.current
+    val dateTimeLabel = rememberMediaDateTimeLabel(dateTakenMillis = dateTakenMillis)
     var scale by remember(photoUri) { mutableFloatStateOf(1f) }
     var translation by remember(photoUri) { mutableStateOf(Offset.Zero) }
     val doubleTapScale = 2.5f
@@ -761,20 +818,33 @@ private fun FullscreenPhotoScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = stringResource(id = R.string.photo_screen_title)) },
+                title = { Text(text = dateTimeLabel) },
                 navigationIcon = {
                     TextButton(onClick = onBack) {
                         Text(text = stringResource(id = R.string.back))
                     }
-                },
-                actions = {
-                    if (onDelete != null) {
-                        TextButton(onClick = { onDelete(photoUri) }) {
-                            Text(text = stringResource(id = R.string.delete))
-                        }
-                    }
                 }
             )
+        },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    TextButton(onClick = onEdit) {
+                        Text(text = stringResource(id = R.string.edit))
+                    }
+                    TextButton(
+                        onClick = { onDelete?.invoke(photoUri) },
+                        enabled = onDelete != null
+                    ) {
+                        Text(text = stringResource(id = R.string.delete))
+                    }
+                }
+            }
         }
     ) { innerPadding ->
         BoxWithConstraints(
@@ -856,6 +926,107 @@ private fun FullscreenPhotoScreen(
             )
         }
     }
+}
+
+@Composable
+private fun FullscreenVideoScreen(
+    videoUri: Uri,
+    dateTakenMillis: Long,
+    onBack: () -> Unit,
+    onDelete: ((Uri) -> Unit)?
+) {
+    BackHandler(onBack = onBack)
+
+    val dateTimeLabel = rememberMediaDateTimeLabel(dateTakenMillis = dateTakenMillis)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(text = dateTimeLabel) },
+                navigationIcon = {
+                    TextButton(onClick = onBack) {
+                        Text(text = stringResource(id = R.string.back))
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    TextButton(
+                        onClick = { onDelete?.invoke(videoUri) },
+                        enabled = onDelete != null
+                    ) {
+                        Text(text = stringResource(id = R.string.delete))
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(MaterialTheme.colorScheme.scrim)
+        ) {
+            key(videoUri) {
+                AndroidView(
+                    factory = { context ->
+                        VideoView(context).apply {
+                            val controller = MediaController(context).also {
+                                it.setAnchorView(this)
+                            }
+                            setMediaController(controller)
+                            setVideoURI(videoUri)
+                            setOnPreparedListener { mediaPlayer ->
+                                mediaPlayer.isLooping = false
+                                start()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberMediaDateTimeLabel(dateTakenMillis: Long): String {
+    val configuration = LocalConfiguration.current
+    val locale = remember(configuration) {
+        if (configuration.locales.isEmpty) {
+            Locale.getDefault()
+        } else {
+            configuration.locales[0]
+        }
+    }
+    return remember(dateTakenMillis, locale) {
+        formatMediaDateTime(
+            timestampMillis = dateTakenMillis,
+            locale = locale
+        )
+    }
+}
+
+private fun formatMediaDateTime(
+    timestampMillis: Long,
+    locale: Locale,
+    zoneId: ZoneId = ZoneId.systemDefault()
+): String {
+    val formatter = DateTimeFormatter
+        .ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+        .withLocale(locale)
+    return Instant
+        .ofEpochMilli(timestampMillis.coerceAtLeast(0L))
+        .atZone(zoneId)
+        .format(formatter)
 }
 
 @Composable
