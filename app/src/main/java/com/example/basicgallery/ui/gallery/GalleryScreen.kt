@@ -16,7 +16,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.text.format.Formatter
 import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
@@ -55,11 +54,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -89,7 +89,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -116,7 +116,12 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 
-private enum class GalleryTab {
+internal const val GALLERY_TOP_APP_BAR_TAG = "gallery_top_app_bar"
+internal const val GALLERY_TAB_ROW_TAG = "gallery_tab_row"
+internal const val GALLERY_TAB_PHOTOS_TAG = "gallery_tab_photos"
+internal const val GALLERY_TAB_TRASH_TAG = "gallery_tab_trash"
+
+internal enum class GalleryTab {
     PHOTOS,
     TRASH
 }
@@ -376,7 +381,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 }
 
 @Composable
-private fun GalleryScreen(
+internal fun GalleryScreen(
     uiState: GalleryUiState,
     imageLoader: ImageLoader,
     currentTab: GalleryTab,
@@ -392,7 +397,6 @@ private fun GalleryScreen(
     onClearSelection: () -> Unit,
     onRetry: () -> Unit
 ) {
-    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val locale = remember(configuration) {
         if (configuration.locales.isEmpty) {
@@ -426,14 +430,6 @@ private fun GalleryScreen(
         currentPhotoCount,
         currentVideoCount
     )
-    val trashSizeLabel = remember(uiState.trashSizeBytes, context) {
-        Formatter.formatShortFileSize(context, uiState.trashSizeBytes.coerceAtLeast(0L))
-    }
-    val defaultTitle = if (isTrashTab) {
-        stringResource(id = R.string.trash_title_with_size, trashSizeLabel)
-    } else {
-        stringResource(id = R.string.gallery_title)
-    }
     val emptyStateText = if (isTrashTab) {
         stringResource(id = R.string.trash_empty_state)
     } else {
@@ -476,43 +472,55 @@ private fun GalleryScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    if (uiState.isSelectionMode) {
-                        Text(
-                            text = stringResource(
-                                id = R.string.gallery_selected_count,
-                                uiState.selectedCount
-                            )
-                        )
-                    } else {
-                        GallerySectionMenu(
-                            currentTitle = defaultTitle,
-                            onOpenPhotos = { onTabSelected(GalleryTab.PHOTOS) },
-                            onOpenTrash = { onTabSelected(GalleryTab.TRASH) }
-                        )
-                    }
-                },
-                actions = {
-                    if (uiState.isSelectionMode) {
-                        if (isTrashTab) {
-                            TrashSelectionPopupMenu(
-                                onRestoreSelected = onRestoreSelected,
-                                onDeleteSelected = onDeleteSelectedFromTrash,
-                                hasSelection = uiState.selectedCount > 0
+            Column {
+                TopAppBar(
+                    modifier = Modifier.testTag(GALLERY_TOP_APP_BAR_TAG),
+                    title = {
+                        if (uiState.isSelectionMode) {
+                            Text(
+                                text = stringResource(
+                                    id = R.string.gallery_selected_count,
+                                    uiState.selectedCount
+                                )
                             )
                         } else {
-                            TextButton(
-                                onClick = onDeleteSelected,
-                                enabled = uiState.selectedCount > 0
-                            ) {
-                                Text(text = stringResource(id = R.string.delete))
+                            GallerySectionTabs(
+                                currentTab = currentTab,
+                                onTabSelected = onTabSelected,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    actions = {
+                        if (uiState.isSelectionMode) {
+                            if (isTrashTab) {
+                                TrashSelectionPopupMenu(
+                                    onRestoreSelected = onRestoreSelected,
+                                    onDeleteSelected = onDeleteSelectedFromTrash,
+                                    hasSelection = uiState.selectedCount > 0
+                                )
+                            } else {
+                                TextButton(
+                                    onClick = onDeleteSelected,
+                                    enabled = uiState.selectedCount > 0
+                                ) {
+                                    Text(text = stringResource(id = R.string.delete))
+                                }
+                            }
+                            TextButton(onClick = onClearSelection) {
+                                Text(text = stringResource(id = R.string.cancel))
                             }
                         }
-                        TextButton(onClick = onClearSelection) {
-                            Text(text = stringResource(id = R.string.cancel))
-                        }
-                    } else if (isTrashTab) {
+                    }
+                )
+
+                if (!uiState.isSelectionMode && isTrashTab) {
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                    ) {
                         TextButton(
                             onClick = onDeleteAllFromTrash,
                             enabled = uiState.trashPhotos.isNotEmpty()
@@ -521,7 +529,7 @@ private fun GalleryScreen(
                         }
                     }
                 }
-            )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -626,47 +634,32 @@ private fun GalleryScreen(
 }
 
 @Composable
-private fun GallerySectionMenu(
-    currentTitle: String,
-    onOpenPhotos: () -> Unit,
-    onOpenTrash: () -> Unit
+private fun GallerySectionTabs(
+    currentTab: GalleryTab,
+    onTabSelected: (GalleryTab) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    var isExpanded by remember { mutableStateOf(false) }
     val photosLabel = stringResource(id = R.string.tab_photos)
     val trashLabel = stringResource(id = R.string.tab_trash)
+    val tabs = listOf(
+        GalleryTab.PHOTOS to photosLabel,
+        GalleryTab.TRASH to trashLabel
+    )
+    val selectedTabIndex = tabs.indexOfFirst { it.first == currentTab }.coerceAtLeast(0)
 
-    Box {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.combinedClickable(
-                onClick = { isExpanded = true },
-                onLongClick = { isExpanded = true }
-            )
-        ) {
-            Text(text = currentTitle)
-            Icon(
-                painter = painterResource(id = R.drawable.ic_arrow_drop_down),
-                contentDescription = null
-            )
-        }
-
-        DropdownMenu(
-            expanded = isExpanded,
-            onDismissRequest = { isExpanded = false }
-        ) {
-            DropdownMenuItem(
-                text = { Text(text = photosLabel) },
-                onClick = {
-                    isExpanded = false
-                    onOpenPhotos()
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(text = trashLabel) },
-                onClick = {
-                    isExpanded = false
-                    onOpenTrash()
-                }
+    TabRow(
+        selectedTabIndex = selectedTabIndex,
+        modifier = modifier.testTag(GALLERY_TAB_ROW_TAG),
+        divider = {}
+    ) {
+        tabs.forEachIndexed { index, (tab, label) ->
+            Tab(
+                modifier = Modifier.testTag(
+                    if (tab == GalleryTab.PHOTOS) GALLERY_TAB_PHOTOS_TAG else GALLERY_TAB_TRASH_TAG
+                ),
+                selected = selectedTabIndex == index,
+                onClick = { onTabSelected(tab) },
+                text = { Text(text = label) }
             )
         }
     }
