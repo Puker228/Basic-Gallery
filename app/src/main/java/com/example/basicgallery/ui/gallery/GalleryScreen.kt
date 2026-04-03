@@ -96,9 +96,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.decode.VideoFrameDecoder
 import coil.request.CachePolicy
 import coil.request.ImageRequest
+import coil.request.videoFrameMillis
 import coil.size.Precision
 import com.example.basicgallery.R
 import com.example.basicgallery.data.model.MediaType
@@ -123,6 +126,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val permissions = remember { requiredReadPermissions() }
+    val mediaImageLoader = rememberMediaImageLoader()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var hasPermission by remember { mutableStateOf(context.hasGalleryReadPermission()) }
@@ -309,6 +313,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
             else -> {
                 GalleryScreen(
                     uiState = uiState,
+                    imageLoader = mediaImageLoader,
                     currentTab = currentTab,
                     gridState = currentGridState,
                     onTabSelected = { tab ->
@@ -377,6 +382,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 @Composable
 private fun GalleryScreen(
     uiState: GalleryUiState,
+    imageLoader: ImageLoader,
     currentTab: GalleryTab,
     gridState: LazyGridState,
     onTabSelected: (GalleryTab) -> Unit,
@@ -583,6 +589,7 @@ private fun GalleryScreen(
                             ) { photo ->
                                 PhotoGridItem(
                                     photo = photo,
+                                    imageLoader = imageLoader,
                                     isSelected = photo.id in uiState.selectedPhotoIds,
                                     onClick = { onPhotoClick(photo) },
                                     onLongClick = { onPhotoLongClick(photo) }
@@ -739,6 +746,7 @@ private fun DaySectionHeader(
 @Composable
 private fun PhotoGridItem(
     photo: PhotoItem,
+    imageLoader: ImageLoader,
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
@@ -767,11 +775,17 @@ private fun PhotoGridItem(
                 .crossfade(false)
                 .allowHardware(true)
                 .size(itemSizePx, itemSizePx)
+                .apply {
+                    if (photo.mediaType == MediaType.VIDEO) {
+                        videoFrameMillis(0)
+                    }
+                }
                 .build()
         }
 
         AsyncImage(
             model = request,
+            imageLoader = imageLoader,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -784,6 +798,18 @@ private fun PhotoGridItem(
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
             )
         }
+    }
+}
+
+@Composable
+private fun rememberMediaImageLoader(): ImageLoader {
+    val context = LocalContext.current
+    return remember(context.applicationContext) {
+        ImageLoader.Builder(context.applicationContext)
+            .components {
+                add(VideoFrameDecoder.Factory())
+            }
+            .build()
     }
 }
 
