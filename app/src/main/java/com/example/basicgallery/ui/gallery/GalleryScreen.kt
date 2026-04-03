@@ -67,6 +67,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -74,6 +77,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Velocity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -98,7 +102,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     val permissions = remember { requiredReadPermissions() }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    var hasPermission by remember { mutableStateOf(context.hasAnyPermission(permissions)) }
+    var hasPermission by remember { mutableStateOf(context.hasGalleryReadPermission()) }
     var permissionRequestStarted by rememberSaveable { mutableStateOf(false) }
     var selectedPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingTrashRequest by remember { mutableStateOf<PendingTrashRequest?>(null) }
@@ -106,9 +110,9 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
+    ) {
         permissionRequestStarted = true
-        hasPermission = result.values.any { it } || context.hasAnyPermission(permissions)
+        hasPermission = context.hasGalleryReadPermission()
     }
 
     val trashLauncher = rememberLauncherForActivityResult(
@@ -144,7 +148,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     DisposableEffect(lifecycleOwner, permissions) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val hasPermissionNow = context.hasAnyPermission(permissions)
+                val hasPermissionNow = context.hasGalleryReadPermission()
                 hasPermission = hasPermissionNow
 
                 if (hasPermissionNow) {
@@ -258,6 +262,46 @@ private fun GalleryScreen(
             locale = locale
         )
     }
+    val density = LocalDensity.current
+    var pullDistancePx by remember { mutableFloatStateOf(0f) }
+    val revealDistancePx = with(density) { 72.dp.toPx() }
+    val maxRevealDistancePx = with(density) { 140.dp.toPx() }
+    val revealProgress = (pullDistancePx / revealDistancePx).coerceIn(0f, 1f)
+    val mediaCountText = stringResource(
+        id = R.string.gallery_media_count,
+        uiState.photoCount,
+        uiState.videoCount
+    )
+    val pullToRevealConnection = remember(maxRevealDistancePx) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source != NestedScrollSource.Drag) return Offset.Zero
+
+                val deltaY = available.y
+                if (deltaY == 0f) return Offset.Zero
+
+                pullDistancePx = (pullDistancePx + deltaY).coerceIn(0f, maxRevealDistancePx)
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity
+            ): Velocity {
+                pullDistancePx = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+    LaunchedEffect(gridState.isScrollInProgress) {
+        if (!gridState.isScrollInProgress && pullDistancePx > 0f) {
+            pullDistancePx = 0f
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -292,6 +336,7 @@ private fun GalleryScreen(
     ) { innerPadding ->
         Box(
             modifier = Modifier
+                .nestedScroll(pullToRevealConnection)
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
@@ -357,6 +402,24 @@ private fun GalleryScreen(
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
                 )
+            }
+
+            if (revealProgress > 0f) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+                    shape = MaterialTheme.shapes.large,
+                    tonalElevation = 2.dp,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .align(Alignment.TopCenter)
+                        .graphicsLayer { alpha = revealProgress }
+                ) {
+                    Text(
+                        text = mediaCountText,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    )
+                }
             }
         }
     }
@@ -613,17 +676,25 @@ private fun ErrorState(
 private fun requiredReadPermissions(): Array<String> = when {
     Build.VERSION.SDK_INT >= 34 -> arrayOf(
         Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED
     )
 
-    Build.VERSION.SDK_INT >= 33 -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+    Build.VERSION.SDK_INT >= 33 -> arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO
+    )
     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
-private fun Context.hasAnyPermission(permissions: Array<String>): Boolean {
-    return permissions.any { permission ->
-        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+private fun Context.hasGalleryReadPermission(): Boolean = when {
+    Build.VERSION.SDK_INT >= 34 -> {
+        hasPermission(Manifest.permission.READ_MEDIA_IMAGES) ||
+                hasPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
     }
+
+    Build.VERSION.SDK_INT >= 33 -> hasPermission(Manifest.permission.READ_MEDIA_IMAGES)
+    else -> hasPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
 private fun Context.shouldShowAnyPermissionRationale(permissions: Array<String>): Boolean {
@@ -631,6 +702,10 @@ private fun Context.shouldShowAnyPermissionRationale(permissions: Array<String>)
     return permissions.any { permission ->
         ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
     }
+}
+
+private fun Context.hasPermission(permission: String): Boolean {
+    return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 }
 
 private fun Context.openAppSettings() {
