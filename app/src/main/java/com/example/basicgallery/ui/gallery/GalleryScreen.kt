@@ -102,6 +102,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.videoFrameMillis
@@ -158,6 +160,12 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     val permissions = remember { requiredReadPermissions() }
     val mediaImageLoader = rememberMediaImageLoader()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    DisposableEffect(mediaImageLoader) {
+        onDispose {
+            mediaImageLoader.shutdown()
+        }
+    }
 
     var hasPermission by remember { mutableStateOf(context.hasGalleryReadPermission()) }
     var permissionRequestStarted by rememberSaveable { mutableStateOf(false) }
@@ -795,7 +803,7 @@ private fun PhotoGridItem(
             ImageRequest.Builder(context)
                 .data(photo.contentUri)
                 .memoryCacheKey(photo.id.toString())
-                .diskCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.DISABLED)
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .precision(Precision.INEXACT)
                 .crossfade(false)
@@ -847,10 +855,22 @@ private fun PhotoGridItem(
 @Composable
 private fun rememberMediaImageLoader(): ImageLoader {
     val context = LocalContext.current
-    return remember(context.applicationContext) {
-        ImageLoader.Builder(context.applicationContext)
+    val appContext = context.applicationContext
+    return remember(appContext) {
+        ImageLoader.Builder(appContext)
             .components {
                 add(VideoFrameDecoder.Factory())
+            }
+            .memoryCache {
+                MemoryCache.Builder(appContext)
+                    .maxSizePercent(0.2)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(appContext.cacheDir.resolve("coil_media_cache"))
+                    .maxSizePercent(0.02)
+                    .build()
             }
             .build()
     }
@@ -984,7 +1004,7 @@ private fun FullscreenPhotoPage(photoUri: Uri) {
         val request = remember(photoUri, context, widthPx, heightPx) {
             ImageRequest.Builder(context)
                 .data(photoUri)
-                .diskCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.DISABLED)
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .precision(Precision.EXACT)
                 .crossfade(false)
@@ -1091,10 +1111,21 @@ private fun FullscreenVideoPage(
     videoUri: Uri,
     isCurrentPage: Boolean
 ) {
+    var videoView: VideoView? by remember(videoUri) { mutableStateOf(null) }
+
+    DisposableEffect(videoUri) {
+        onDispose {
+            videoView?.setOnPreparedListener(null)
+            videoView?.stopPlayback()
+            videoView = null
+        }
+    }
+
     key(videoUri) {
         AndroidView(
             factory = { context ->
                 VideoView(context).apply {
+                    videoView = this
                     val controller = MediaController(context).also {
                         it.setAnchorView(this)
                     }
