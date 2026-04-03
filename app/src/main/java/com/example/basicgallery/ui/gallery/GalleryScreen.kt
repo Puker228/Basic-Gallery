@@ -287,6 +287,15 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                 } else {
                     uiState.photos
                 }
+                val onEditPhotoRequest: ((PhotoItem) -> Unit)? = if (selectedMediaOpenedFromTrash) {
+                    null
+                } else {
+                    { media ->
+                        editorPhotoUri = media.contentUri.toString()
+                        editorPhotoId = media.id
+                        editorPhotoDateTakenMillis = media.dateTakenMillis
+                    }
+                }
                 val onDeleteRequest: ((Uri) -> Unit)? = if (selectedMediaOpenedFromTrash) {
                     null
                 } else {
@@ -303,11 +312,7 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     mediaItems = currentMedia,
                     initialMediaUri = mediaUri,
                     onBack = { selectedMediaUri = null },
-                    onEditPhoto = { media ->
-                        editorPhotoUri = media.contentUri.toString()
-                        editorPhotoId = media.id
-                        editorPhotoDateTakenMillis = media.dateTakenMillis
-                    },
+                    onEditPhoto = onEditPhotoRequest,
                     onDelete = onDeleteRequest,
                     onCurrentMediaChanged = { currentMediaItem ->
                         selectedMediaUri = currentMediaItem.contentUri.toString()
@@ -834,11 +839,11 @@ private fun rememberMediaImageLoader(): ImageLoader {
 }
 
 @Composable
-private fun FullscreenMediaScreen(
+internal fun FullscreenMediaScreen(
     mediaItems: List<PhotoItem>,
     initialMediaUri: Uri,
     onBack: () -> Unit,
-    onEditPhoto: (PhotoItem) -> Unit,
+    onEditPhoto: ((PhotoItem) -> Unit)?,
     onDelete: ((Uri) -> Unit)?,
     onCurrentMediaChanged: (PhotoItem) -> Unit
 ) {
@@ -899,8 +904,10 @@ private fun FullscreenMediaScreen(
                         .padding(vertical = 8.dp)
                 ) {
                     if (currentMedia.mediaType == MediaType.PHOTO) {
-                        TextButton(onClick = { onEditPhoto(currentMedia) }) {
-                            Text(text = stringResource(id = R.string.edit))
+                        if (onEditPhoto != null) {
+                            TextButton(onClick = { onEditPhoto(currentMedia) }) {
+                                Text(text = stringResource(id = R.string.edit))
+                            }
                         }
                         TextButton(
                             onClick = { onDelete?.invoke(currentMedia.contentUri) },
