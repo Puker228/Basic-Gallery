@@ -14,6 +14,9 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 - Video thumbnails use the first video frame and show duration at bottom-right (`MM:SS`, or `HH:MM:SS` for videos 1 hour+).
 - Full-screen media viewer supports left/right swiping across all items in the current section (photos + videos).
 - Full-screen photo view shows capture date/time and bottom actions (`Edit`, `Delete`).
+- Built-in photo editor supports `Exposure`, `Brightness`, `Contrast`, and `Sharpness`.
+- Saving an edited photo creates a new file and keeps the original photo unchanged.
+- Edited copy keeps the original photo capture date.
 - Full-screen video view shows capture date/time, has a simple player, and bottom `Delete` action.
 - Photos section: multi-select and move to trash.
 - Trash section:

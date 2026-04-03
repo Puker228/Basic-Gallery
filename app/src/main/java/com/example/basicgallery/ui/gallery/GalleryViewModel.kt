@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.basicgallery.data.GalleryRepository
 import com.example.basicgallery.data.model.MediaType
+import com.example.basicgallery.data.model.PhotoAdjustments
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -116,6 +117,15 @@ class GalleryViewModel(
 
     fun createDeleteRequest(photoUris: Collection<Uri>): IntentSender? {
         return repository.createDeleteRequest(photoUris)
+    }
+
+    suspend fun saveEditedPhoto(
+        sourcePhoto: PhotoItem,
+        adjustments: PhotoAdjustments
+    ): Result<Uri> {
+        return runCatching {
+            repository.saveEditedPhoto(sourcePhoto, adjustments)
+        }
     }
 }
 

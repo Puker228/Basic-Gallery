@@ -27,6 +27,9 @@ Current main-screen behavior (keep docs and code aligned when changing it):
 - Full-screen photo viewer:
   - Top bar shows photo creation date/time.
   - Bottom actions: `Edit` and `Delete`.
+  - `Edit` opens an in-app photo editor with controls for `Exposure/Выдержка`, `Brightness/Яркость`, `Contrast/Контраст`, and `Sharpness/Резкость`.
+  - Saving creates a new photo without deleting the original.
+  - The saved edited photo keeps the original photo capture date/time.
 - Full-screen video viewer:
   - Top bar shows video creation date/time.
   - Uses a simple inline player.

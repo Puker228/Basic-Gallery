@@ -22,6 +22,7 @@
     <string name="restore">Restore</string>
     <string name="actions">Actions</string>
     <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
     <string name="gallery_selected_count">Selected: %1$d</string>
     <string name="gallery_media_count">Photos: %1$d • Videos: %2$d</string>
     <string name="trash_not_supported">Trash is available on Android 11 and newer.</string>
@@ -29,4 +30,12 @@
     <string name="delete_not_supported">Permanent delete is available on Android 11 and newer.</string>
     <string name="gallery_date_today">Today</string>
     <string name="gallery_date_yesterday">Yesterday</string>
+    <string name="photo_editor_title">Photo editor</string>
+    <string name="photo_editor_exposure">Exposure</string>
+    <string name="photo_editor_brightness">Brightness</string>
+    <string name="photo_editor_contrast">Contrast</string>
+    <string name="photo_editor_sharpness">Sharpness</string>
+    <string name="photo_editor_saved">Edited photo saved.</string>
+    <string name="photo_editor_save_failed">Unable to save edited photo.</string>
+    <string name="photo_editor_load_failed">Unable to load photo for editing.</string>
 </resources>
