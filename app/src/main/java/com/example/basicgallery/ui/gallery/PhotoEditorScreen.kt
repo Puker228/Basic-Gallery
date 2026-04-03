@@ -8,16 +8,22 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,14 +42,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.basicgallery.R
 import com.example.basicgallery.data.PhotoEditingProcessor
@@ -55,6 +70,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private const val PREVIEW_MAX_DIMENSION = 1600
@@ -64,10 +80,31 @@ internal const val PHOTO_EDITOR_EXPOSURE_SLIDER_TAG = "photo_editor_exposure_sli
 internal const val PHOTO_EDITOR_BRIGHTNESS_SLIDER_TAG = "photo_editor_brightness_slider"
 internal const val PHOTO_EDITOR_CONTRAST_SLIDER_TAG = "photo_editor_contrast_slider"
 internal const val PHOTO_EDITOR_SHARPNESS_SLIDER_TAG = "photo_editor_sharpness_slider"
-internal const val PHOTO_EDITOR_CROP_LEFT_SLIDER_TAG = "photo_editor_crop_left_slider"
-internal const val PHOTO_EDITOR_CROP_TOP_SLIDER_TAG = "photo_editor_crop_top_slider"
-internal const val PHOTO_EDITOR_CROP_RIGHT_SLIDER_TAG = "photo_editor_crop_right_slider"
-internal const val PHOTO_EDITOR_CROP_BOTTOM_SLIDER_TAG = "photo_editor_crop_bottom_slider"
+internal const val PHOTO_EDITOR_CROP_FRAME_TAG = "photo_editor_crop_frame"
+internal const val PHOTO_EDITOR_CROP_HANDLE_TOP_LEFT_TAG = "photo_editor_crop_handle_top_left"
+internal const val PHOTO_EDITOR_CROP_HANDLE_TOP_RIGHT_TAG = "photo_editor_crop_handle_top_right"
+internal const val PHOTO_EDITOR_CROP_HANDLE_BOTTOM_LEFT_TAG = "photo_editor_crop_handle_bottom_left"
+internal const val PHOTO_EDITOR_CROP_HANDLE_BOTTOM_RIGHT_TAG = "photo_editor_crop_handle_bottom_right"
+
+private enum class CropHandleCorner {
+    TOP_LEFT,
+    TOP_RIGHT,
+    BOTTOM_LEFT,
+    BOTTOM_RIGHT
+}
+
+private data class DisplayImageFrame(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val height: Float
+) {
+    val right: Float
+        get() = left + width
+
+    val bottom: Float
+        get() = top + height
+}
 
 @Composable
 internal fun PhotoEditorScreen(
@@ -79,9 +116,9 @@ internal fun PhotoEditorScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var adjustments by remember(sourcePhoto.id) { mutableStateOf(PhotoAdjustments()) }
+    var crop by remember(sourcePhoto.id) { mutableStateOf(PhotoCrop()) }
     var sourceBitmap by remember(sourcePhoto.id) { mutableStateOf<Bitmap?>(null) }
     var previewBitmap by remember(sourcePhoto.id) { mutableStateOf<Bitmap?>(null) }
-    var crop by remember(sourcePhoto.id) { mutableStateOf(PhotoCrop()) }
     var isLoading by remember(sourcePhoto.id) { mutableStateOf(true) }
     var hasLoadingError by remember(sourcePhoto.id) { mutableStateOf(false) }
     var isSaving by remember(sourcePhoto.id) { mutableStateOf(false) }
@@ -103,22 +140,11 @@ internal fun PhotoEditorScreen(
         }
         loadedBitmap
             .onSuccess { bitmap ->
-                val previousSource = sourceBitmap
-                val previousPreview = previewBitmap
                 sourceBitmap = bitmap
                 previewBitmap = bitmap
+                crop = PhotoCrop()
                 isLoading = false
                 hasLoadingError = false
-                if (previousPreview != null &&
-                    previousPreview !== previousSource &&
-                    previousPreview !== bitmap &&
-                    !previousPreview.isRecycled
-                ) {
-                    previousPreview.recycle()
-                }
-                if (previousSource != null && previousSource !== bitmap && !previousSource.isRecycled) {
-                    previousSource.recycle()
-                }
             }
             .onFailure {
                 hasLoadingError = true
@@ -126,24 +152,23 @@ internal fun PhotoEditorScreen(
             }
     }
 
-    LaunchedEffect(sourceBitmap, adjustments, crop) {
+    LaunchedEffect(sourceBitmap, adjustments) {
         val original = sourceBitmap ?: return@LaunchedEffect
 
-        if (adjustments.isIdentity() && crop.isFullImage()) {
+        if (adjustments.isIdentity()) {
             val oldPreview = previewBitmap
             previewBitmap = original
             if (oldPreview != null && oldPreview !== original && !oldPreview.isRecycled) {
-                oldPreview.recycle()
+                withFrameNanos { }
+                if (previewBitmap !== oldPreview && !oldPreview.isRecycled) {
+                    oldPreview.recycle()
+                }
             }
             return@LaunchedEffect
         }
 
         val processedPreview = withContext(Dispatchers.Default) {
-            PhotoEditingProcessor.applyEdits(
-                source = original,
-                adjustments = adjustments,
-                crop = crop
-            )
+            PhotoEditingProcessor.applyAdjustments(original, adjustments)
         }
         val oldPreview = previewBitmap
         previewBitmap = processedPreview
@@ -152,7 +177,10 @@ internal fun PhotoEditorScreen(
             oldPreview !== processedPreview &&
             !oldPreview.isRecycled
         ) {
-            oldPreview.recycle()
+            withFrameNanos { }
+            if (previewBitmap !== oldPreview && !oldPreview.isRecycled) {
+                oldPreview.recycle()
+            }
         }
     }
 
@@ -173,7 +201,7 @@ internal fun PhotoEditorScreen(
         if (!canSave) return
         isSaving = true
         scope.launch {
-            val result = onSavePhoto(sourcePhoto, adjustments, crop)
+            val result = onSavePhoto(sourcePhoto, adjustments, crop.normalized())
             isSaving = false
             result
                 .onSuccess { savedUri ->
@@ -246,41 +274,10 @@ internal fun PhotoEditorScreen(
                         onValueChange = { adjustments = adjustments.copy(sharpness = it) }
                     )
                     Text(
-                        text = stringResource(id = R.string.photo_editor_crop_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
-                    )
-                    AdjustmentSlider(
-                        title = stringResource(id = R.string.photo_editor_crop_left),
-                        value = crop.left,
-                        valueRange = 0f..(crop.right - PhotoCrop.MIN_SPAN),
-                        sliderTag = PHOTO_EDITOR_CROP_LEFT_SLIDER_TAG,
-                        valueFormatter = ::formatPercentValue,
-                        onValueChange = { crop = crop.copy(left = it).normalized() }
-                    )
-                    AdjustmentSlider(
-                        title = stringResource(id = R.string.photo_editor_crop_top),
-                        value = crop.top,
-                        valueRange = 0f..(crop.bottom - PhotoCrop.MIN_SPAN),
-                        sliderTag = PHOTO_EDITOR_CROP_TOP_SLIDER_TAG,
-                        valueFormatter = ::formatPercentValue,
-                        onValueChange = { crop = crop.copy(top = it).normalized() }
-                    )
-                    AdjustmentSlider(
-                        title = stringResource(id = R.string.photo_editor_crop_right),
-                        value = crop.right,
-                        valueRange = (crop.left + PhotoCrop.MIN_SPAN)..1f,
-                        sliderTag = PHOTO_EDITOR_CROP_RIGHT_SLIDER_TAG,
-                        valueFormatter = ::formatPercentValue,
-                        onValueChange = { crop = crop.copy(right = it).normalized() }
-                    )
-                    AdjustmentSlider(
-                        title = stringResource(id = R.string.photo_editor_crop_bottom),
-                        value = crop.bottom,
-                        valueRange = (crop.top + PhotoCrop.MIN_SPAN)..1f,
-                        sliderTag = PHOTO_EDITOR_CROP_BOTTOM_SLIDER_TAG,
-                        valueFormatter = ::formatPercentValue,
-                        onValueChange = { crop = crop.copy(bottom = it).normalized() }
+                        text = stringResource(id = R.string.photo_editor_crop_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
@@ -298,7 +295,7 @@ internal fun PhotoEditorScreen(
                     CircularProgressIndicator()
                 }
 
-                hasLoadingError || previewBitmap == null -> {
+                hasLoadingError || previewBitmap == null || sourceBitmap == null -> {
                     Text(
                         text = stringResource(id = R.string.photo_editor_load_failed),
                         style = MaterialTheme.typography.bodyLarge,
@@ -307,11 +304,12 @@ internal fun PhotoEditorScreen(
                 }
 
                 else -> {
-                    Image(
-                        bitmap = previewBitmap!!.asImageBitmap(),
-                        contentDescription = stringResource(id = R.string.photo_content_description),
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize()
+                    CropPreviewArea(
+                        bitmap = previewBitmap!!,
+                        sourceBitmapWidth = sourceBitmap!!.width,
+                        sourceBitmapHeight = sourceBitmap!!.height,
+                        crop = crop,
+                        onCropChange = { crop = it }
                     )
                 }
             }
@@ -324,6 +322,197 @@ internal fun PhotoEditorScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CropPreviewArea(
+    bitmap: Bitmap,
+    sourceBitmapWidth: Int,
+    sourceBitmapHeight: Int,
+    crop: PhotoCrop,
+    onCropChange: (PhotoCrop) -> Unit
+) {
+    val density = LocalDensity.current
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val containerWidthPx = with(density) { maxWidth.toPx().coerceAtLeast(1f) }
+        val containerHeightPx = with(density) { maxHeight.toPx().coerceAtLeast(1f) }
+        val imageFrame = remember(
+            containerWidthPx,
+            containerHeightPx,
+            sourceBitmapWidth,
+            sourceBitmapHeight
+        ) {
+            calculateDisplayImageFrame(
+                containerWidthPx = containerWidthPx,
+                containerHeightPx = containerHeightPx,
+                imageWidthPx = sourceBitmapWidth.toFloat().coerceAtLeast(1f),
+                imageHeightPx = sourceBitmapHeight.toFloat().coerceAtLeast(1f)
+            )
+        }
+
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = stringResource(id = R.string.photo_content_description),
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        CropFrameOverlay(
+            imageFrame = imageFrame,
+            crop = crop,
+            onCropChange = onCropChange
+        )
+    }
+}
+
+@Composable
+private fun CropFrameOverlay(
+    imageFrame: DisplayImageFrame,
+    crop: PhotoCrop,
+    onCropChange: (PhotoCrop) -> Unit
+) {
+    val normalizedCrop = crop.normalized()
+    val cropLeft = imageFrame.left + (normalizedCrop.left * imageFrame.width)
+    val cropTop = imageFrame.top + (normalizedCrop.top * imageFrame.height)
+    val cropRight = imageFrame.left + (normalizedCrop.right * imageFrame.width)
+    val cropBottom = imageFrame.top + (normalizedCrop.bottom * imageFrame.height)
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(PHOTO_EDITOR_CROP_FRAME_TAG)
+    ) {
+        val dimColor = Color.Black.copy(alpha = 0.45f)
+        drawRect(
+            color = dimColor,
+            topLeft = Offset.Zero,
+            size = Size(width = size.width, height = cropTop)
+        )
+        drawRect(
+            color = dimColor,
+            topLeft = Offset(0f, cropBottom),
+            size = Size(width = size.width, height = size.height - cropBottom)
+        )
+        drawRect(
+            color = dimColor,
+            topLeft = Offset(0f, cropTop),
+            size = Size(width = cropLeft, height = cropBottom - cropTop)
+        )
+        drawRect(
+            color = dimColor,
+            topLeft = Offset(cropRight, cropTop),
+            size = Size(width = size.width - cropRight, height = cropBottom - cropTop)
+        )
+
+        drawRect(
+            color = Color.White,
+            topLeft = Offset(cropLeft, cropTop),
+            size = Size(width = cropRight - cropLeft, height = cropBottom - cropTop),
+            style = Stroke(width = 2.dp.toPx())
+        )
+    }
+
+    CropCornerHandle(
+        tag = PHOTO_EDITOR_CROP_HANDLE_TOP_LEFT_TAG,
+        centerX = cropLeft,
+        centerY = cropTop,
+        onDrag = { dragX, dragY ->
+            onCropChange(
+                updateCropFromCorner(
+                    crop = normalizedCrop,
+                    corner = CropHandleCorner.TOP_LEFT,
+                    dragXNorm = dragX / imageFrame.width,
+                    dragYNorm = dragY / imageFrame.height
+                )
+            )
+        }
+    )
+    CropCornerHandle(
+        tag = PHOTO_EDITOR_CROP_HANDLE_TOP_RIGHT_TAG,
+        centerX = cropRight,
+        centerY = cropTop,
+        onDrag = { dragX, dragY ->
+            onCropChange(
+                updateCropFromCorner(
+                    crop = normalizedCrop,
+                    corner = CropHandleCorner.TOP_RIGHT,
+                    dragXNorm = dragX / imageFrame.width,
+                    dragYNorm = dragY / imageFrame.height
+                )
+            )
+        }
+    )
+    CropCornerHandle(
+        tag = PHOTO_EDITOR_CROP_HANDLE_BOTTOM_LEFT_TAG,
+        centerX = cropLeft,
+        centerY = cropBottom,
+        onDrag = { dragX, dragY ->
+            onCropChange(
+                updateCropFromCorner(
+                    crop = normalizedCrop,
+                    corner = CropHandleCorner.BOTTOM_LEFT,
+                    dragXNorm = dragX / imageFrame.width,
+                    dragYNorm = dragY / imageFrame.height
+                )
+            )
+        }
+    )
+    CropCornerHandle(
+        tag = PHOTO_EDITOR_CROP_HANDLE_BOTTOM_RIGHT_TAG,
+        centerX = cropRight,
+        centerY = cropBottom,
+        onDrag = { dragX, dragY ->
+            onCropChange(
+                updateCropFromCorner(
+                    crop = normalizedCrop,
+                    corner = CropHandleCorner.BOTTOM_RIGHT,
+                    dragXNorm = dragX / imageFrame.width,
+                    dragYNorm = dragY / imageFrame.height
+                )
+            )
+        }
+    )
+}
+
+@Composable
+private fun CropCornerHandle(
+    tag: String,
+    centerX: Float,
+    centerY: Float,
+    onDrag: (dragX: Float, dragY: Float) -> Unit
+) {
+    val touchSize = 36.dp
+    val visualSize = 14.dp
+    val density = LocalDensity.current
+    val halfTouchPx = with(density) { touchSize.toPx() / 2f }
+    val latestOnDrag by rememberUpdatedState(onDrag)
+
+    Box(
+        modifier = Modifier
+            .offset {
+                IntOffset(
+                    x = (centerX - halfTouchPx).roundToInt(),
+                    y = (centerY - halfTouchPx).roundToInt()
+                )
+            }
+            .size(touchSize)
+            .testTag(tag)
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    latestOnDrag(dragAmount.x, dragAmount.y)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(visualSize)
+                .background(Color.White)
+                .border(width = 1.dp, color = Color.Black.copy(alpha = 0.6f))
+        )
     }
 }
 
@@ -363,6 +552,68 @@ private fun AdjustmentSlider(
     }
 }
 
+private fun calculateDisplayImageFrame(
+    containerWidthPx: Float,
+    containerHeightPx: Float,
+    imageWidthPx: Float,
+    imageHeightPx: Float
+): DisplayImageFrame {
+    val fitScale = min(
+        containerWidthPx / imageWidthPx,
+        containerHeightPx / imageHeightPx
+    )
+    val displayedWidth = imageWidthPx * fitScale
+    val displayedHeight = imageHeightPx * fitScale
+    return DisplayImageFrame(
+        left = (containerWidthPx - displayedWidth) / 2f,
+        top = (containerHeightPx - displayedHeight) / 2f,
+        width = displayedWidth,
+        height = displayedHeight
+    )
+}
+
+private fun updateCropFromCorner(
+    crop: PhotoCrop,
+    corner: CropHandleCorner,
+    dragXNorm: Float,
+    dragYNorm: Float
+): PhotoCrop {
+    val normalized = crop.normalized()
+    var left = normalized.left
+    var top = normalized.top
+    var right = normalized.right
+    var bottom = normalized.bottom
+
+    when (corner) {
+        CropHandleCorner.TOP_LEFT -> {
+            left = (left + dragXNorm).coerceIn(0f, right - PhotoCrop.MIN_SPAN)
+            top = (top + dragYNorm).coerceIn(0f, bottom - PhotoCrop.MIN_SPAN)
+        }
+
+        CropHandleCorner.TOP_RIGHT -> {
+            right = (right + dragXNorm).coerceIn(left + PhotoCrop.MIN_SPAN, 1f)
+            top = (top + dragYNorm).coerceIn(0f, bottom - PhotoCrop.MIN_SPAN)
+        }
+
+        CropHandleCorner.BOTTOM_LEFT -> {
+            left = (left + dragXNorm).coerceIn(0f, right - PhotoCrop.MIN_SPAN)
+            bottom = (bottom + dragYNorm).coerceIn(top + PhotoCrop.MIN_SPAN, 1f)
+        }
+
+        CropHandleCorner.BOTTOM_RIGHT -> {
+            right = (right + dragXNorm).coerceIn(left + PhotoCrop.MIN_SPAN, 1f)
+            bottom = (bottom + dragYNorm).coerceIn(top + PhotoCrop.MIN_SPAN, 1f)
+        }
+    }
+
+    return PhotoCrop(
+        left = left,
+        top = top,
+        right = right,
+        bottom = bottom
+    ).normalized()
+}
+
 private fun decodeScaledBitmap(
     contentResolver: ContentResolver,
     uri: Uri,
@@ -389,8 +640,4 @@ private fun formatSliderValue(value: Float): String {
         if (value >= 0f) "+%.2f" else "%.2f",
         value
     )
-}
-
-private fun formatPercentValue(value: Float): String {
-    return String.format(Locale.getDefault(), "%d%%", (value * 100f).roundToInt())
 }

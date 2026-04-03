@@ -35,11 +35,7 @@
     <string name="photo_editor_brightness">Brightness</string>
     <string name="photo_editor_contrast">Contrast</string>
     <string name="photo_editor_sharpness">Sharpness</string>
-    <string name="photo_editor_crop_title">Crop</string>
-    <string name="photo_editor_crop_left">Left edge</string>
-    <string name="photo_editor_crop_top">Top edge</string>
-    <string name="photo_editor_crop_right">Right edge</string>
-    <string name="photo_editor_crop_bottom">Bottom edge</string>
+    <string name="photo_editor_crop_hint">Drag the corner handles on the frame to crop the photo.</string>
     <string name="photo_editor_saved">Edited photo saved.</string>
     <string name="photo_editor_save_failed">Unable to save edited photo.</string>
     <string name="photo_editor_load_failed">Unable to load photo for editing.</string>

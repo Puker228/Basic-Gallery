@@ -7,6 +7,7 @@ import android.content.IntentSender
 import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +20,7 @@ import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class MediaStoreGalleryRepository(
     private val contentResolver: ContentResolver
@@ -63,14 +65,11 @@ class MediaStoreGalleryRepository(
         adjustments: PhotoAdjustments,
         crop: PhotoCrop
     ): Uri = withContext(Dispatchers.IO) {
-        val sourceBitmap = decodeBitmap(sourcePhoto.contentUri)
+        val normalizedCrop = crop.normalized()
+        val sourceBitmap = decodeBitmap(sourcePhoto.contentUri, normalizedCrop)
         var processedBitmap: Bitmap? = null
         try {
-            processedBitmap = PhotoEditingProcessor.applyEdits(
-                source = sourceBitmap,
-                adjustments = adjustments,
-                crop = crop
-            )
+            processedBitmap = PhotoEditingProcessor.applyAdjustments(sourceBitmap, adjustments)
             val sourceMetadata = querySourceImageMetadata(sourcePhoto.contentUri)
             saveEditedBitmapToMediaStore(
                 bitmap = processedBitmap,
@@ -359,10 +358,23 @@ class MediaStoreGalleryRepository(
         }
     }
 
-    private fun decodeBitmap(uri: Uri): Bitmap {
+    private fun decodeBitmap(
+        uri: Uri,
+        crop: PhotoCrop = PhotoCrop()
+    ): Bitmap {
+        val normalizedCrop = crop.normalized()
         val source = ImageDecoder.createSource(contentResolver, uri)
-        return ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+        return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            if (!normalizedCrop.isFullImage()) {
+                val width = info.size.width.coerceAtLeast(1)
+                val height = info.size.height.coerceAtLeast(1)
+                val left = (normalizedCrop.left * width).roundToInt().coerceIn(0, width - 1)
+                val top = (normalizedCrop.top * height).roundToInt().coerceIn(0, height - 1)
+                val right = (normalizedCrop.right * width).roundToInt().coerceIn(left + 1, width)
+                val bottom = (normalizedCrop.bottom * height).roundToInt().coerceIn(top + 1, height)
+                decoder.setCrop(Rect(left, top, right, bottom))
+            }
         }
     }
 

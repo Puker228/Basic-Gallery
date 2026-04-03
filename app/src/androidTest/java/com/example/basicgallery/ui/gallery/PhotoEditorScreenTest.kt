@@ -12,6 +12,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.basicgallery.R
@@ -20,6 +22,7 @@ import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,11 +43,12 @@ class PhotoEditorScreenTest {
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_brightness)).assertIsDisplayed()
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_contrast)).assertIsDisplayed()
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_sharpness)).assertIsDisplayed()
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_title)).assertIsDisplayed()
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_left)).assertIsDisplayed()
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_top)).assertIsDisplayed()
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_right)).assertIsDisplayed()
-        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_bottom)).assertIsDisplayed()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_hint)).assertIsDisplayed()
+        composeRule.onNodeWithTag(PHOTO_EDITOR_CROP_FRAME_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PHOTO_EDITOR_CROP_HANDLE_TOP_LEFT_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PHOTO_EDITOR_CROP_HANDLE_TOP_RIGHT_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PHOTO_EDITOR_CROP_HANDLE_BOTTOM_LEFT_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(PHOTO_EDITOR_CROP_HANDLE_BOTTOM_RIGHT_TAG).assertIsDisplayed()
     }
 
     @Test
@@ -64,10 +68,7 @@ class PhotoEditorScreenTest {
         setSliderProgress(PHOTO_EDITOR_BRIGHTNESS_SLIDER_TAG, 0.35f)
         setSliderProgress(PHOTO_EDITOR_CONTRAST_SLIDER_TAG, 0.45f)
         setSliderProgress(PHOTO_EDITOR_SHARPNESS_SLIDER_TAG, 0.8f)
-        setSliderProgress(PHOTO_EDITOR_CROP_LEFT_SLIDER_TAG, 0.1f)
-        setSliderProgress(PHOTO_EDITOR_CROP_TOP_SLIDER_TAG, 0.2f)
-        setSliderProgress(PHOTO_EDITOR_CROP_RIGHT_SLIDER_TAG, 0.9f)
-        setSliderProgress(PHOTO_EDITOR_CROP_BOTTOM_SLIDER_TAG, 0.8f)
+        dragCropHandle(PHOTO_EDITOR_CROP_HANDLE_TOP_LEFT_TAG, dragX = 80f, dragY = 80f)
 
         composeRule.onNodeWithTag(PHOTO_EDITOR_SAVE_BUTTON_TAG).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -82,10 +83,10 @@ class PhotoEditorScreenTest {
         assertEquals(0.35f, actual.brightness, 0.001f)
         assertEquals(0.45f, actual.contrast, 0.001f)
         assertEquals(0.8f, actual.sharpness, 0.001f)
-        assertEquals(0.1f, actualCrop!!.left, 0.001f)
-        assertEquals(0.2f, actualCrop.top, 0.001f)
-        assertEquals(0.9f, actualCrop.right, 0.001f)
-        assertEquals(0.8f, actualCrop.bottom, 0.001f)
+        assertTrue(actualCrop!!.left > 0f)
+        assertTrue(actualCrop.top > 0f)
+        assertEquals(1f, actualCrop.right, 0.001f)
+        assertEquals(1f, actualCrop.bottom, 0.001f)
     }
 
     private fun waitForSaveButtonEnabled() {
@@ -106,6 +107,14 @@ class PhotoEditorScreenTest {
     private fun setSliderProgress(tag: String, value: Float) {
         composeRule.onNodeWithTag(tag).performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
             setProgress(value)
+        }
+    }
+
+    private fun dragCropHandle(tag: String, dragX: Float, dragY: Float) {
+        composeRule.onNodeWithTag(tag).performTouchInput {
+            down(center)
+            moveBy(Offset(dragX, dragY))
+            up()
         }
     }
 

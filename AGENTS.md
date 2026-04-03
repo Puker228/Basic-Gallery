@@ -28,7 +28,7 @@ Current main-screen behavior (keep docs and code aligned when changing it):
   - Top bar shows photo creation date/time.
   - Bottom actions: `Edit` and `Delete`.
   - `Edit` opens an in-app photo editor with controls for `Exposure/Выдержка`, `Brightness/Яркость`, `Contrast/Контраст`, and `Sharpness/Резкость`.
-  - Editor supports photo crop controls for left/top/right/bottom boundaries.
+  - Editor supports an interactive crop frame with draggable corner handles.
   - Saving creates a new photo without deleting the original.
   - The saved edited photo keeps the original photo capture date/time.
 - Full-screen video viewer:
