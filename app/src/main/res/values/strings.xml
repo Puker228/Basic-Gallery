@@ -1,7 +1,11 @@
 <resources>
     <string name="app_name">Basic Gallery</string>
-    <string name="gallery_title">Gallery</string>
+    <string name="gallery_title">Photos</string>
+    <string name="tab_photos">Photos</string>
+    <string name="tab_trash">Trash</string>
+    <string name="trash_title_with_size">Trash (%1$s)</string>
     <string name="gallery_empty_state">No photos found on this device.</string>
+    <string name="trash_empty_state">Trash is empty.</string>
     <string name="permission_message">Allow access to photos and videos to show your gallery.</string>
     <string name="permission_grant_button">Grant access</string>
     <string name="permission_settings_button">Open settings</string>
@@ -10,10 +14,15 @@
     <string name="retry">Retry</string>
     <string name="back">Back</string>
     <string name="delete">Delete</string>
+    <string name="delete_all">Delete all</string>
+    <string name="restore">Restore</string>
+    <string name="actions">Actions</string>
     <string name="cancel">Cancel</string>
     <string name="gallery_selected_count">Selected: %1$d</string>
     <string name="gallery_media_count">Photos: %1$d • Videos: %2$d</string>
     <string name="trash_not_supported">Trash is available on Android 11 and newer.</string>
+    <string name="restore_not_supported">Restore from trash is available on Android 11 and newer.</string>
+    <string name="delete_not_supported">Permanent delete is available on Android 11 and newer.</string>
     <string name="gallery_date_today">Today</string>
     <string name="gallery_date_yesterday">Yesterday</string>
 </resources>

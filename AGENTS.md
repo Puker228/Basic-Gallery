@@ -13,6 +13,18 @@ This repository is a single-module Android app.
 
 Keep feature code in `app/src/main/java/...` and mirror package structure in test directories.
 
+## Product Behavior Snapshot
+Current main-screen behavior (keep docs and code aligned when changing it):
+
+- Section switcher is in the top app bar title area as a dropdown with arrow icon.
+- Available sections: `Фото/Photos` and `Корзина/Trash`.
+- Trash title includes total photo size in brackets (`Корзина (228 МБ)` style).
+- Pull-down reveal shows section media counters (`Фото: X • Видео: Y` / `Photos: X • Videos: Y`).
+- Trash supports:
+  - `Delete all` action in top-right corner.
+  - Multi-select with bottom actions `Restore` and `Delete`.
+  - Restore via MediaStore untrash API and permanent delete via MediaStore delete API (Android 11+).
+
 ## Build, Test, and Development Commands
 Run commands from the repository root:
 

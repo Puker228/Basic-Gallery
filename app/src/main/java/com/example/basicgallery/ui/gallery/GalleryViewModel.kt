@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.basicgallery.data.GalleryRepository
+import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,20 +29,37 @@ class GalleryViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
-            runCatching { repository.loadPhotos() }
+            runCatching {
+                val photos = repository.loadPhotos()
+                val trashPhotos = repository.loadTrashPhotos()
+                val videoCount = repository.loadVideoCount()
+                val trashVideoCount = repository.loadTrashVideoCount()
+                LoadedMedia(
+                    photos = photos,
+                    trashPhotos = trashPhotos,
+                    videoCount = videoCount,
+                    trashVideoCount = trashVideoCount
+                )
+            }
                 .onSuccess { photos ->
-                    val videoCount = repository.loadVideoCount()
-                    val photoIds = photos.asSequence().map { it.id }.toSet()
+                    val allPhotoIds = buildSet {
+                        addAll(photos.photos.asSequence().map { it.id })
+                        addAll(photos.trashPhotos.asSequence().map { it.id })
+                    }
                     val retainedSelection =
                         _uiState.value.selectedPhotoIds.filterTo(mutableSetOf()) { id ->
-                            id in photoIds
+                            id in allPhotoIds
                         }
                     _uiState.value = GalleryUiState(
                         isLoading = false,
-                        photos = photos,
+                        photos = photos.photos,
+                        trashPhotos = photos.trashPhotos,
                         selectedPhotoIds = retainedSelection,
-                        photoCount = photos.size,
-                        videoCount = videoCount
+                        photoCount = photos.photos.size,
+                        videoCount = photos.videoCount,
+                        trashPhotoCount = photos.trashPhotos.size,
+                        trashVideoCount = photos.trashVideoCount,
+                        trashSizeBytes = photos.trashPhotos.sumOf { it.sizeBytes }
                     )
                 }
                 .onFailure { error ->
@@ -76,10 +94,25 @@ class GalleryViewModel(
         }
     }
 
-    fun createTrashRequest(photoUris: Collection<Uri>): IntentSender? {
-        return repository.createTrashRequest(photoUris)
+    fun createMoveToTrashRequest(photoUris: Collection<Uri>): IntentSender? {
+        return repository.createTrashRequest(photoUris, moveToTrash = true)
+    }
+
+    fun createRestoreRequest(photoUris: Collection<Uri>): IntentSender? {
+        return repository.createTrashRequest(photoUris, moveToTrash = false)
+    }
+
+    fun createDeleteRequest(photoUris: Collection<Uri>): IntentSender? {
+        return repository.createDeleteRequest(photoUris)
     }
 }
+
+private data class LoadedMedia(
+    val photos: List<PhotoItem>,
+    val trashPhotos: List<PhotoItem>,
+    val videoCount: Int,
+    val trashVideoCount: Int
+)
 
 class GalleryViewModelFactory(
     private val repository: GalleryRepository

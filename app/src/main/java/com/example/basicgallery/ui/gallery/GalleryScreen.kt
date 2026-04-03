@@ -10,10 +10,12 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +45,9 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -73,7 +78,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -82,6 +87,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
@@ -91,7 +97,12 @@ import com.example.basicgallery.R
 import com.example.basicgallery.data.model.PhotoItem
 import java.util.Locale
 
-private data class PendingTrashRequest(
+private enum class GalleryTab {
+    PHOTOS,
+    TRASH
+}
+
+private data class PendingMediaRequest(
     val closeViewerAfterSuccess: Boolean
 )
 
@@ -105,8 +116,17 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var hasPermission by remember { mutableStateOf(context.hasGalleryReadPermission()) }
     var permissionRequestStarted by rememberSaveable { mutableStateOf(false) }
     var selectedPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingTrashRequest by remember { mutableStateOf<PendingTrashRequest?>(null) }
-    val gridState = rememberLazyGridState()
+    var selectedPhotoOpenedFromTrash by rememberSaveable { mutableStateOf(false) }
+    var currentTabName by rememberSaveable { mutableStateOf(GalleryTab.PHOTOS.name) }
+    val currentTab = GalleryTab.valueOf(currentTabName)
+    var pendingMediaRequest by remember { mutableStateOf<PendingMediaRequest?>(null) }
+    val photosGridState = rememberLazyGridState()
+    val trashGridState = rememberLazyGridState()
+    val currentGridState = if (currentTab == GalleryTab.PHOTOS) {
+        photosGridState
+    } else {
+        trashGridState
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -115,11 +135,11 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         hasPermission = context.hasGalleryReadPermission()
     }
 
-    val trashLauncher = rememberLauncherForActivityResult(
+    val mediaActionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        val request = pendingTrashRequest
-        pendingTrashRequest = null
+        val request = pendingMediaRequest
+        pendingMediaRequest = null
 
         if (result.resultCode == Activity.RESULT_OK && request != null) {
             if (request.closeViewerAfterSuccess) {
@@ -130,19 +150,48 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         }
     }
 
-    fun launchTrashRequest(photoUris: List<Uri>, closeViewerAfterSuccess: Boolean) {
-        if (photoUris.isEmpty()) return
-
-        val intentSender = viewModel.createTrashRequest(photoUris)
+    fun launchMediaRequest(
+        intentSender: IntentSender?,
+        unsupportedMessageRes: Int,
+        closeViewerAfterSuccess: Boolean = false
+    ) {
         if (intentSender == null) {
-            Toast.makeText(context, R.string.trash_not_supported, Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, unsupportedMessageRes, Toast.LENGTH_SHORT).show()
             return
         }
 
-        pendingTrashRequest = PendingTrashRequest(
+        pendingMediaRequest = PendingMediaRequest(
             closeViewerAfterSuccess = closeViewerAfterSuccess
         )
-        trashLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+        mediaActionLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+    }
+
+    fun launchMoveToTrashRequest(photoUris: List<Uri>, closeViewerAfterSuccess: Boolean) {
+        if (photoUris.isEmpty()) return
+
+        launchMediaRequest(
+            intentSender = viewModel.createMoveToTrashRequest(photoUris),
+            unsupportedMessageRes = R.string.trash_not_supported,
+            closeViewerAfterSuccess = closeViewerAfterSuccess
+        )
+    }
+
+    fun launchRestoreRequest(photoUris: List<Uri>) {
+        if (photoUris.isEmpty()) return
+
+        launchMediaRequest(
+            intentSender = viewModel.createRestoreRequest(photoUris),
+            unsupportedMessageRes = R.string.restore_not_supported
+        )
+    }
+
+    fun launchDeleteRequest(photoUris: List<Uri>) {
+        if (photoUris.isEmpty()) return
+
+        launchMediaRequest(
+            intentSender = viewModel.createDeleteRequest(photoUris),
+            unsupportedMessageRes = R.string.delete_not_supported
+        )
     }
 
     DisposableEffect(lifecycleOwner, permissions) {
@@ -179,11 +228,15 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                 FullscreenPhotoScreen(
                     photoUri = Uri.parse(openedPhotoUri),
                     onBack = { selectedPhotoUri = null },
-                    onDelete = { uri ->
-                        launchTrashRequest(
-                            photoUris = listOf(uri),
-                            closeViewerAfterSuccess = true
-                        )
+                    onDelete = if (selectedPhotoOpenedFromTrash) {
+                        null
+                    } else {
+                        { uri ->
+                            launchMoveToTrashRequest(
+                                photoUris = listOf(uri),
+                                closeViewerAfterSuccess = true
+                            )
+                        }
                     }
                 )
             }
@@ -203,12 +256,20 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
             else -> {
                 GalleryScreen(
                     uiState = uiState,
-                    gridState = gridState,
+                    currentTab = currentTab,
+                    gridState = currentGridState,
+                    onTabSelected = { tab ->
+                        if (currentTab != tab) {
+                            currentTabName = tab.name
+                            viewModel.clearSelection()
+                        }
+                    },
                     onPhotoClick = { photo ->
                         if (uiState.isSelectionMode) {
                             viewModel.toggleSelection(photo.id)
                         } else {
                             selectedPhotoUri = photo.contentUri.toString()
+                            selectedPhotoOpenedFromTrash = currentTab == GalleryTab.TRASH
                         }
                     },
                     onPhotoLongClick = { photo ->
@@ -221,9 +282,30 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                             .map { it.contentUri }
                             .toList()
 
-                        launchTrashRequest(
+                        launchMoveToTrashRequest(
                             photoUris = selectedUris,
                             closeViewerAfterSuccess = false
+                        )
+                    },
+                    onRestoreSelected = {
+                        val selectedUris = uiState.trashPhotos
+                            .asSequence()
+                            .filter { it.id in uiState.selectedPhotoIds }
+                            .map { it.contentUri }
+                            .toList()
+                        launchRestoreRequest(selectedUris)
+                    },
+                    onDeleteSelectedFromTrash = {
+                        val selectedUris = uiState.trashPhotos
+                            .asSequence()
+                            .filter { it.id in uiState.selectedPhotoIds }
+                            .map { it.contentUri }
+                            .toList()
+                        launchDeleteRequest(selectedUris)
+                    },
+                    onDeleteAllFromTrash = {
+                        launchDeleteRequest(
+                            uiState.trashPhotos.map { it.contentUri }
                         )
                     },
                     onClearSelection = { viewModel.clearSelection() },
@@ -237,13 +319,19 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
 @Composable
 private fun GalleryScreen(
     uiState: GalleryUiState,
+    currentTab: GalleryTab,
     gridState: LazyGridState,
+    onTabSelected: (GalleryTab) -> Unit,
     onPhotoClick: (PhotoItem) -> Unit,
     onPhotoLongClick: (PhotoItem) -> Unit,
     onDeleteSelected: () -> Unit,
+    onRestoreSelected: () -> Unit,
+    onDeleteSelectedFromTrash: () -> Unit,
+    onDeleteAllFromTrash: () -> Unit,
     onClearSelection: () -> Unit,
     onRetry: () -> Unit
 ) {
+    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val locale = remember(configuration) {
         if (configuration.locales.isEmpty) {
@@ -252,11 +340,16 @@ private fun GalleryScreen(
             configuration.locales[0]
         }
     }
+    val isTrashTab = currentTab == GalleryTab.TRASH
+    val currentPhotos = if (isTrashTab) uiState.trashPhotos else uiState.photos
+    val currentPhotoCount = if (isTrashTab) uiState.trashPhotoCount else uiState.photoCount
+    val currentVideoCount = if (isTrashTab) uiState.trashVideoCount else uiState.videoCount
+
     val todayLabel = stringResource(id = R.string.gallery_date_today)
     val yesterdayLabel = stringResource(id = R.string.gallery_date_yesterday)
-    val photoSections = remember(uiState.photos, locale, todayLabel, yesterdayLabel) {
+    val photoSections = remember(currentPhotos, locale, todayLabel, yesterdayLabel) {
         groupPhotosByDay(
-            photos = uiState.photos,
+            photos = currentPhotos,
             todayLabel = todayLabel,
             yesterdayLabel = yesterdayLabel,
             locale = locale
@@ -269,9 +362,23 @@ private fun GalleryScreen(
     val revealProgress = (pullDistancePx / revealDistancePx).coerceIn(0f, 1f)
     val mediaCountText = stringResource(
         id = R.string.gallery_media_count,
-        uiState.photoCount,
-        uiState.videoCount
+        currentPhotoCount,
+        currentVideoCount
     )
+    val trashSizeLabel = remember(uiState.trashSizeBytes, context) {
+        Formatter.formatShortFileSize(context, uiState.trashSizeBytes.coerceAtLeast(0L))
+    }
+    val defaultTitle = if (isTrashTab) {
+        stringResource(id = R.string.trash_title_with_size, trashSizeLabel)
+    } else {
+        stringResource(id = R.string.gallery_title)
+    }
+    val emptyStateText = if (isTrashTab) {
+        stringResource(id = R.string.trash_empty_state)
+    } else {
+        stringResource(id = R.string.gallery_empty_state)
+    }
+
     val pullToRevealConnection = remember(maxRevealDistancePx) {
         object : NestedScrollConnection {
             override fun onPostScroll(
@@ -279,7 +386,7 @@ private fun GalleryScreen(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
-                if (source != NestedScrollSource.Drag) return Offset.Zero
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
 
                 val deltaY = available.y
                 if (deltaY == 0f) return Offset.Zero
@@ -296,6 +403,9 @@ private fun GalleryScreen(
                 return Velocity.Zero
             }
         }
+    }
+    LaunchedEffect(currentTab) {
+        pullDistancePx = 0f
     }
     LaunchedEffect(gridState.isScrollInProgress) {
         if (!gridState.isScrollInProgress && pullDistancePx > 0f) {
@@ -315,19 +425,38 @@ private fun GalleryScreen(
                             )
                         )
                     } else {
-                        Text(text = stringResource(id = R.string.gallery_title))
+                        GallerySectionMenu(
+                            currentTitle = defaultTitle,
+                            onOpenPhotos = { onTabSelected(GalleryTab.PHOTOS) },
+                            onOpenTrash = { onTabSelected(GalleryTab.TRASH) }
+                        )
                     }
                 },
                 actions = {
                     if (uiState.isSelectionMode) {
-                        TextButton(
-                            onClick = onDeleteSelected,
-                            enabled = uiState.selectedCount > 0
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
+                        if (isTrashTab) {
+                            TrashSelectionPopupMenu(
+                                onRestoreSelected = onRestoreSelected,
+                                onDeleteSelected = onDeleteSelectedFromTrash,
+                                hasSelection = uiState.selectedCount > 0
+                            )
+                        } else {
+                            TextButton(
+                                onClick = onDeleteSelected,
+                                enabled = uiState.selectedCount > 0
+                            ) {
+                                Text(text = stringResource(id = R.string.delete))
+                            }
                         }
                         TextButton(onClick = onClearSelection) {
                             Text(text = stringResource(id = R.string.cancel))
+                        }
+                    } else if (isTrashTab) {
+                        TextButton(
+                            onClick = onDeleteAllFromTrash,
+                            enabled = uiState.trashPhotos.isNotEmpty()
+                        ) {
+                            Text(text = stringResource(id = R.string.delete_all))
                         }
                     }
                 }
@@ -341,11 +470,11 @@ private fun GalleryScreen(
                 .padding(innerPadding)
         ) {
             when {
-                uiState.isLoading && uiState.photos.isEmpty() -> {
+                uiState.isLoading && currentPhotos.isEmpty() -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
 
-                uiState.errorMessage != null && uiState.photos.isEmpty() -> {
+                uiState.errorMessage != null && currentPhotos.isEmpty() -> {
                     ErrorState(
                         message = uiState.errorMessage,
                         onRetry = onRetry,
@@ -353,9 +482,9 @@ private fun GalleryScreen(
                     )
                 }
 
-                uiState.photos.isEmpty() -> {
+                currentPhotos.isEmpty() -> {
                     Text(
-                        text = stringResource(id = R.string.gallery_empty_state),
+                        text = emptyStateText,
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.align(Alignment.Center)
                     )
@@ -396,7 +525,7 @@ private fun GalleryScreen(
                 }
             }
 
-            if (uiState.isLoading && uiState.photos.isNotEmpty()) {
+            if (uiState.isLoading && currentPhotos.isNotEmpty()) {
                 LinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -421,6 +550,91 @@ private fun GalleryScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun GallerySectionMenu(
+    currentTitle: String,
+    onOpenPhotos: () -> Unit,
+    onOpenTrash: () -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    val photosLabel = stringResource(id = R.string.tab_photos)
+    val trashLabel = stringResource(id = R.string.tab_trash)
+
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.combinedClickable(
+                onClick = { isExpanded = true },
+                onLongClick = { isExpanded = true }
+            )
+        ) {
+            Text(text = currentTitle)
+            Icon(
+                painter = painterResource(id = R.drawable.ic_arrow_drop_down),
+                contentDescription = null
+            )
+        }
+
+        DropdownMenu(
+            expanded = isExpanded,
+            onDismissRequest = { isExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = photosLabel) },
+                onClick = {
+                    isExpanded = false
+                    onOpenPhotos()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(text = trashLabel) },
+                onClick = {
+                    isExpanded = false
+                    onOpenTrash()
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrashSelectionPopupMenu(
+    onRestoreSelected: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    hasSelection: Boolean
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Box {
+        TextButton(
+            onClick = { isExpanded = true },
+            enabled = hasSelection
+        ) {
+            Text(text = stringResource(id = R.string.actions))
+        }
+
+        DropdownMenu(
+            expanded = isExpanded,
+            onDismissRequest = { isExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = stringResource(id = R.string.restore)) },
+                onClick = {
+                    isExpanded = false
+                    onRestoreSelected()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(text = stringResource(id = R.string.delete)) },
+                onClick = {
+                    isExpanded = false
+                    onDeleteSelected()
+                }
+            )
         }
     }
 }
@@ -491,7 +705,7 @@ private fun PhotoGridItem(
 private fun FullscreenPhotoScreen(
     photoUri: Uri,
     onBack: () -> Unit,
-    onDelete: (Uri) -> Unit
+    onDelete: ((Uri) -> Unit)?
 ) {
     BackHandler(onBack = onBack)
 
@@ -523,8 +737,10 @@ private fun FullscreenPhotoScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = { onDelete(photoUri) }) {
-                        Text(text = stringResource(id = R.string.delete))
+                    if (onDelete != null) {
+                        TextButton(onClick = { onDelete(photoUri) }) {
+                            Text(text = stringResource(id = R.string.delete))
+                        }
                     }
                 }
             )

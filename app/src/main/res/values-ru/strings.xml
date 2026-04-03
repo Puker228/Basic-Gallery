@@ -1,5 +1,27 @@
 <resources>
+    <string name="gallery_title">Фото</string>
+    <string name="tab_photos">Фото</string>
+    <string name="tab_trash">Корзина</string>
+    <string name="trash_title_with_size">Корзина (%1$s)</string>
+    <string name="gallery_empty_state">На устройстве не найдено фото.</string>
+    <string name="trash_empty_state">Корзина пуста.</string>
+    <string name="permission_message">Разрешите доступ к фото и видео, чтобы показать галерею.</string>
+    <string name="permission_grant_button">Разрешить доступ</string>
+    <string name="permission_settings_button">Открыть настройки</string>
+    <string name="photo_screen_title">Фото</string>
+    <string name="photo_content_description">Выбранное фото</string>
+    <string name="retry">Повторить</string>
+    <string name="back">Назад</string>
+    <string name="delete">Удалить</string>
+    <string name="delete_all">Удалить всё</string>
+    <string name="restore">Восстановить</string>
+    <string name="actions">Действия</string>
+    <string name="cancel">Отмена</string>
+    <string name="gallery_selected_count">Выбрано: %1$d</string>
+    <string name="gallery_media_count">Фото: %1$d • Видео: %2$d</string>
+    <string name="trash_not_supported">Корзина доступна на Android 11 и выше.</string>
+    <string name="restore_not_supported">Восстановление доступно на Android 11 и выше.</string>
+    <string name="delete_not_supported">Удаление из корзины доступно на Android 11 и выше.</string>
     <string name="gallery_date_today">Сегодня</string>
     <string name="gallery_date_yesterday">Вчера</string>
-    <string name="gallery_media_count">Фото: %1$d • Видео: %2$d</string>
 </resources>

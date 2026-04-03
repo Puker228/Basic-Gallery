@@ -1,15 +1,21 @@
 # Basic Gallery
 
-Basic Gallery is a single-module Android app that shows photos from device storage using Jetpack Compose.
+Basic Gallery is a single-module Android app that shows device photos and supports a full trash flow using Jetpack Compose.
 
 ## Features
 
-- Requests runtime permission to access local images.
-- Loads images from `MediaStore` and sorts them by capture date.
+- Requests runtime permissions for local media access.
+- Loads photos and trash photos from `MediaStore`, sorted by capture date.
+- Top app bar section switcher with dropdown (`Photos` / `Trash`) and arrow indicator.
 - Groups photos by day with localized section labels (for example, Today/Yesterday).
-- Displays photos in a 3-column grid.
-- Supports full-screen photo viewing.
-- Supports multi-select and delete via `MediaStore.createTrashRequest` on Android 11+.
+- Displays photos in a 3-column grid and supports full-screen photo viewing.
+- Photos section: multi-select and move to trash.
+- Trash section:
+  - Title shows total size of photos in trash (`Trash (228 MB)` style).
+  - Pull-down reveal shows media counters (`Photos: X • Videos: Y` for trash).
+  - Top-right `Delete all` action for all trash photos.
+  - Multi-select bottom actions: `Restore` and `Delete`.
+- Uses `MediaStore.createTrashRequest(..., false)` for restore and `MediaStore.createDeleteRequest(...)` for permanent delete on Android 11+.
 
 ## Tech Stack
 
@@ -54,8 +60,10 @@ Run from the repository root:
 
 ## Permissions
 
-The app declares and requests image-read permissions based on Android version:
+The app declares and requests media-read permissions based on Android version:
 
-- Android 14+ (`API 34+`): `READ_MEDIA_IMAGES`, `READ_MEDIA_VISUAL_USER_SELECTED`
-- Android 13 (`API 33`): `READ_MEDIA_IMAGES`
+- Android 14+ (`API 34+`): `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, `READ_MEDIA_VISUAL_USER_SELECTED`
+- Android 13 (`API 33`): `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`
 - Android 12 and lower: `READ_EXTERNAL_STORAGE`
+
+Trash, restore, and permanent-delete request APIs require Android 11+.
