@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,6 +55,29 @@ class PhotoEditingProcessorInstrumentedTest {
 
         val center = Color.red(result.getPixel(1, 1))
         assertTrue(center > 128)
+
+        result.recycle()
+        source.recycle()
+    }
+
+    @Test
+    fun applyEdits_withCrop_returnsCroppedDimensions() {
+        val source = Bitmap.createBitmap(10, 8, Bitmap.Config.ARGB_8888)
+        source.eraseColor(Color.rgb(64, 64, 64))
+
+        val result = PhotoEditingProcessor.applyEdits(
+            source = source,
+            adjustments = PhotoAdjustments(),
+            crop = PhotoCrop(
+                left = 0.1f,
+                top = 0.25f,
+                right = 0.9f,
+                bottom = 0.75f
+            )
+        )
+
+        assertEquals(8, result.width)
+        assertEquals(4, result.height)
 
         result.recycle()
         source.recycle()

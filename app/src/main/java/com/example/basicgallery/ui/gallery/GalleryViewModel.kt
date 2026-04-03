@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.basicgallery.data.GalleryRepository
 import com.example.basicgallery.data.model.MediaType
 import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -121,10 +122,11 @@ class GalleryViewModel(
 
     suspend fun saveEditedPhoto(
         sourcePhoto: PhotoItem,
-        adjustments: PhotoAdjustments
+        adjustments: PhotoAdjustments,
+        crop: PhotoCrop
     ): Result<Uri> {
         return runCatching {
-            repository.saveEditedPhoto(sourcePhoto, adjustments)
+            repository.saveEditedPhoto(sourcePhoto, adjustments, crop)
         }
     }
 }

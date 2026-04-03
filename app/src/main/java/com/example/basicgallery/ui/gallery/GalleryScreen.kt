@@ -269,8 +269,8 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                         editorPhotoId = null
                         editorPhotoDateTakenMillis = null
                     },
-                    onSavePhoto = { sourcePhoto, adjustments ->
-                        viewModel.saveEditedPhoto(sourcePhoto, adjustments)
+                    onSavePhoto = { sourcePhoto, adjustments, crop ->
+                        viewModel.saveEditedPhoto(sourcePhoto, adjustments, crop)
                     },
                     onSaved = {
                         editorPhotoUri = null

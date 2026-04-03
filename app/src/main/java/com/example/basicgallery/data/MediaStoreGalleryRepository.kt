@@ -14,6 +14,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.example.basicgallery.data.model.MediaType
 import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,12 +60,17 @@ class MediaStoreGalleryRepository(
 
     override suspend fun saveEditedPhoto(
         sourcePhoto: PhotoItem,
-        adjustments: PhotoAdjustments
+        adjustments: PhotoAdjustments,
+        crop: PhotoCrop
     ): Uri = withContext(Dispatchers.IO) {
         val sourceBitmap = decodeBitmap(sourcePhoto.contentUri)
         var processedBitmap: Bitmap? = null
         try {
-            processedBitmap = PhotoEditingProcessor.applyAdjustments(sourceBitmap, adjustments)
+            processedBitmap = PhotoEditingProcessor.applyEdits(
+                source = sourceBitmap,
+                adjustments = adjustments,
+                crop = crop
+            )
             val sourceMetadata = querySourceImageMetadata(sourcePhoto.contentUri)
             saveEditedBitmapToMediaStore(
                 bitmap = processedBitmap,

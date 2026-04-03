@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.basicgallery.R
 import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -39,14 +40,21 @@ class PhotoEditorScreenTest {
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_brightness)).assertIsDisplayed()
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_contrast)).assertIsDisplayed()
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_sharpness)).assertIsDisplayed()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_title)).assertIsDisplayed()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_left)).assertIsDisplayed()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_top)).assertIsDisplayed()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_right)).assertIsDisplayed()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.photo_editor_crop_bottom)).assertIsDisplayed()
     }
 
     @Test
-    fun save_passesUpdatedAdjustments() {
+    fun save_passesUpdatedAdjustmentsAndCrop() {
         var savedAdjustments: PhotoAdjustments? = null
+        var savedCrop: PhotoCrop? = null
         setEditorContent(
-            onSavePhoto = { _, adjustments ->
+            onSavePhoto = { _, adjustments, crop ->
                 savedAdjustments = adjustments
+                savedCrop = crop
                 Result.success(Uri.parse("content://test/saved"))
             }
         )
@@ -56,18 +64,28 @@ class PhotoEditorScreenTest {
         setSliderProgress(PHOTO_EDITOR_BRIGHTNESS_SLIDER_TAG, 0.35f)
         setSliderProgress(PHOTO_EDITOR_CONTRAST_SLIDER_TAG, 0.45f)
         setSliderProgress(PHOTO_EDITOR_SHARPNESS_SLIDER_TAG, 0.8f)
+        setSliderProgress(PHOTO_EDITOR_CROP_LEFT_SLIDER_TAG, 0.1f)
+        setSliderProgress(PHOTO_EDITOR_CROP_TOP_SLIDER_TAG, 0.2f)
+        setSliderProgress(PHOTO_EDITOR_CROP_RIGHT_SLIDER_TAG, 0.9f)
+        setSliderProgress(PHOTO_EDITOR_CROP_BOTTOM_SLIDER_TAG, 0.8f)
 
         composeRule.onNodeWithTag(PHOTO_EDITOR_SAVE_BUTTON_TAG).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
-            savedAdjustments != null
+            savedAdjustments != null && savedCrop != null
         }
 
         val actual = savedAdjustments
+        val actualCrop = savedCrop
         assertNotNull(actual)
+        assertNotNull(actualCrop)
         assertEquals(1.25f, actual!!.exposure, 0.001f)
         assertEquals(0.35f, actual.brightness, 0.001f)
         assertEquals(0.45f, actual.contrast, 0.001f)
         assertEquals(0.8f, actual.sharpness, 0.001f)
+        assertEquals(0.1f, actualCrop!!.left, 0.001f)
+        assertEquals(0.2f, actualCrop.top, 0.001f)
+        assertEquals(0.9f, actualCrop.right, 0.001f)
+        assertEquals(0.8f, actualCrop.bottom, 0.001f)
     }
 
     private fun waitForSaveButtonEnabled() {
@@ -92,7 +110,7 @@ class PhotoEditorScreenTest {
     }
 
     private fun setEditorContent(
-        onSavePhoto: suspend (PhotoItem, PhotoAdjustments) -> Result<Uri> = { _, _ ->
+        onSavePhoto: suspend (PhotoItem, PhotoAdjustments, PhotoCrop) -> Result<Uri> = { _, _, _ ->
             Result.success(Uri.parse("content://test/saved"))
         }
     ) {

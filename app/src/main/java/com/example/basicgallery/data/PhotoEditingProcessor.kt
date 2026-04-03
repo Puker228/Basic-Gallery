@@ -2,23 +2,34 @@ package com.example.basicgallery.data
 
 import android.graphics.Bitmap
 import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
 object PhotoEditingProcessor {
 
-    fun applyAdjustments(
+    fun applyEdits(
         source: Bitmap,
-        adjustments: PhotoAdjustments
+        adjustments: PhotoAdjustments,
+        crop: PhotoCrop
     ): Bitmap {
-        if (adjustments.isIdentity()) return source
+        val normalizedCrop = crop.normalized()
+        if (adjustments.isIdentity() && normalizedCrop.isFullImage()) return source
 
-        val width = source.width
-        val height = source.height
-        if (width <= 0 || height <= 0) return source
+        val croppedBitmap = cropBitmap(source, normalizedCrop)
+        if (adjustments.isIdentity()) return croppedBitmap
+
+        val width = croppedBitmap.width
+        val height = croppedBitmap.height
+        if (width <= 0 || height <= 0) {
+            if (croppedBitmap !== source) {
+                croppedBitmap.recycle()
+            }
+            return source
+        }
 
         val sourcePixels = IntArray(width * height)
-        source.getPixels(sourcePixels, 0, width, 0, 0, width, height)
+        croppedBitmap.getPixels(sourcePixels, 0, width, 0, 0, width, height)
 
         val toneAdjustedPixels = applyToneAdjustments(sourcePixels, adjustments)
         val outputPixels = applySharpness(
@@ -28,7 +39,37 @@ object PhotoEditingProcessor {
             strength = adjustments.sharpness.coerceIn(0f, 1f)
         )
 
+        if (croppedBitmap !== source) {
+            croppedBitmap.recycle()
+        }
         return Bitmap.createBitmap(outputPixels, width, height, Bitmap.Config.ARGB_8888)
+    }
+
+    fun applyAdjustments(
+        source: Bitmap,
+        adjustments: PhotoAdjustments
+    ): Bitmap {
+        return applyEdits(
+            source = source,
+            adjustments = adjustments,
+            crop = PhotoCrop()
+        )
+    }
+
+    private fun cropBitmap(source: Bitmap, crop: PhotoCrop): Bitmap {
+        if (crop.isFullImage()) return source
+        val sourceWidth = source.width
+        val sourceHeight = source.height
+        if (sourceWidth <= 1 || sourceHeight <= 1) return source
+
+        val leftPx = (crop.left * sourceWidth).roundToInt().coerceIn(0, sourceWidth - 1)
+        val topPx = (crop.top * sourceHeight).roundToInt().coerceIn(0, sourceHeight - 1)
+        val rightPx = (crop.right * sourceWidth).roundToInt().coerceIn(leftPx + 1, sourceWidth)
+        val bottomPx = (crop.bottom * sourceHeight).roundToInt().coerceIn(topPx + 1, sourceHeight)
+        val width = (rightPx - leftPx).coerceAtLeast(1)
+        val height = (bottomPx - topPx).coerceAtLeast(1)
+
+        return Bitmap.createBitmap(source, leftPx, topPx, width, height)
     }
 
     private fun applyToneAdjustments(

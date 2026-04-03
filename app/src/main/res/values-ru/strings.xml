@@ -34,6 +34,11 @@
     <string name="photo_editor_brightness">Яркость</string>
     <string name="photo_editor_contrast">Контраст</string>
     <string name="photo_editor_sharpness">Резкость</string>
+    <string name="photo_editor_crop_title">Обрезка</string>
+    <string name="photo_editor_crop_left">Левая граница</string>
+    <string name="photo_editor_crop_top">Верхняя граница</string>
+    <string name="photo_editor_crop_right">Правая граница</string>
+    <string name="photo_editor_crop_bottom">Нижняя граница</string>
     <string name="photo_editor_saved">Измененное фото сохранено.</string>
     <string name="photo_editor_save_failed">Не удалось сохранить измененное фото.</string>
     <string name="photo_editor_load_failed">Не удалось загрузить фото для редактирования.</string>

@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.example.basicgallery.R
 import com.example.basicgallery.data.PhotoEditingProcessor
 import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -63,12 +64,16 @@ internal const val PHOTO_EDITOR_EXPOSURE_SLIDER_TAG = "photo_editor_exposure_sli
 internal const val PHOTO_EDITOR_BRIGHTNESS_SLIDER_TAG = "photo_editor_brightness_slider"
 internal const val PHOTO_EDITOR_CONTRAST_SLIDER_TAG = "photo_editor_contrast_slider"
 internal const val PHOTO_EDITOR_SHARPNESS_SLIDER_TAG = "photo_editor_sharpness_slider"
+internal const val PHOTO_EDITOR_CROP_LEFT_SLIDER_TAG = "photo_editor_crop_left_slider"
+internal const val PHOTO_EDITOR_CROP_TOP_SLIDER_TAG = "photo_editor_crop_top_slider"
+internal const val PHOTO_EDITOR_CROP_RIGHT_SLIDER_TAG = "photo_editor_crop_right_slider"
+internal const val PHOTO_EDITOR_CROP_BOTTOM_SLIDER_TAG = "photo_editor_crop_bottom_slider"
 
 @Composable
 internal fun PhotoEditorScreen(
     sourcePhoto: PhotoItem,
     onBack: () -> Unit,
-    onSavePhoto: suspend (PhotoItem, PhotoAdjustments) -> Result<Uri>,
+    onSavePhoto: suspend (PhotoItem, PhotoAdjustments, PhotoCrop) -> Result<Uri>,
     onSaved: (Uri) -> Unit
 ) {
     val context = LocalContext.current
@@ -76,6 +81,7 @@ internal fun PhotoEditorScreen(
     var adjustments by remember(sourcePhoto.id) { mutableStateOf(PhotoAdjustments()) }
     var sourceBitmap by remember(sourcePhoto.id) { mutableStateOf<Bitmap?>(null) }
     var previewBitmap by remember(sourcePhoto.id) { mutableStateOf<Bitmap?>(null) }
+    var crop by remember(sourcePhoto.id) { mutableStateOf(PhotoCrop()) }
     var isLoading by remember(sourcePhoto.id) { mutableStateOf(true) }
     var hasLoadingError by remember(sourcePhoto.id) { mutableStateOf(false) }
     var isSaving by remember(sourcePhoto.id) { mutableStateOf(false) }
@@ -120,10 +126,10 @@ internal fun PhotoEditorScreen(
             }
     }
 
-    LaunchedEffect(sourceBitmap, adjustments) {
+    LaunchedEffect(sourceBitmap, adjustments, crop) {
         val original = sourceBitmap ?: return@LaunchedEffect
 
-        if (adjustments.isIdentity()) {
+        if (adjustments.isIdentity() && crop.isFullImage()) {
             val oldPreview = previewBitmap
             previewBitmap = original
             if (oldPreview != null && oldPreview !== original && !oldPreview.isRecycled) {
@@ -133,7 +139,11 @@ internal fun PhotoEditorScreen(
         }
 
         val processedPreview = withContext(Dispatchers.Default) {
-            PhotoEditingProcessor.applyAdjustments(original, adjustments)
+            PhotoEditingProcessor.applyEdits(
+                source = original,
+                adjustments = adjustments,
+                crop = crop
+            )
         }
         val oldPreview = previewBitmap
         previewBitmap = processedPreview
@@ -163,7 +173,7 @@ internal fun PhotoEditorScreen(
         if (!canSave) return
         isSaving = true
         scope.launch {
-            val result = onSavePhoto(sourcePhoto, adjustments)
+            val result = onSavePhoto(sourcePhoto, adjustments, crop)
             isSaving = false
             result
                 .onSuccess { savedUri ->
@@ -235,6 +245,43 @@ internal fun PhotoEditorScreen(
                         sliderTag = PHOTO_EDITOR_SHARPNESS_SLIDER_TAG,
                         onValueChange = { adjustments = adjustments.copy(sharpness = it) }
                     )
+                    Text(
+                        text = stringResource(id = R.string.photo_editor_crop_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                    )
+                    AdjustmentSlider(
+                        title = stringResource(id = R.string.photo_editor_crop_left),
+                        value = crop.left,
+                        valueRange = 0f..(crop.right - PhotoCrop.MIN_SPAN),
+                        sliderTag = PHOTO_EDITOR_CROP_LEFT_SLIDER_TAG,
+                        valueFormatter = ::formatPercentValue,
+                        onValueChange = { crop = crop.copy(left = it).normalized() }
+                    )
+                    AdjustmentSlider(
+                        title = stringResource(id = R.string.photo_editor_crop_top),
+                        value = crop.top,
+                        valueRange = 0f..(crop.bottom - PhotoCrop.MIN_SPAN),
+                        sliderTag = PHOTO_EDITOR_CROP_TOP_SLIDER_TAG,
+                        valueFormatter = ::formatPercentValue,
+                        onValueChange = { crop = crop.copy(top = it).normalized() }
+                    )
+                    AdjustmentSlider(
+                        title = stringResource(id = R.string.photo_editor_crop_right),
+                        value = crop.right,
+                        valueRange = (crop.left + PhotoCrop.MIN_SPAN)..1f,
+                        sliderTag = PHOTO_EDITOR_CROP_RIGHT_SLIDER_TAG,
+                        valueFormatter = ::formatPercentValue,
+                        onValueChange = { crop = crop.copy(right = it).normalized() }
+                    )
+                    AdjustmentSlider(
+                        title = stringResource(id = R.string.photo_editor_crop_bottom),
+                        value = crop.bottom,
+                        valueRange = (crop.top + PhotoCrop.MIN_SPAN)..1f,
+                        sliderTag = PHOTO_EDITOR_CROP_BOTTOM_SLIDER_TAG,
+                        valueFormatter = ::formatPercentValue,
+                        onValueChange = { crop = crop.copy(bottom = it).normalized() }
+                    )
                 }
             }
         }
@@ -286,6 +333,7 @@ private fun AdjustmentSlider(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     sliderTag: String,
+    valueFormatter: (Float) -> String = ::formatSliderValue,
     onValueChange: (Float) -> Unit
 ) {
     Column(
@@ -302,7 +350,7 @@ private fun AdjustmentSlider(
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                text = formatSliderValue(value),
+                text = valueFormatter(value),
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -341,4 +389,8 @@ private fun formatSliderValue(value: Float): String {
         if (value >= 0f) "+%.2f" else "%.2f",
         value
     )
+}
+
+private fun formatPercentValue(value: Float): String {
+    return String.format(Locale.getDefault(), "%d%%", (value * 100f).roundToInt())
 }

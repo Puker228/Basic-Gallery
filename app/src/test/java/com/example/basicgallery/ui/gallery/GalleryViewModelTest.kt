@@ -4,6 +4,7 @@ import android.content.IntentSender
 import android.net.Uri
 import com.example.basicgallery.data.GalleryRepository
 import com.example.basicgallery.data.model.PhotoAdjustments
+import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
@@ -199,7 +200,11 @@ private class FakeGalleryRepository(
         return deleteRequestResult
     }
 
-    override suspend fun saveEditedPhoto(sourcePhoto: PhotoItem, adjustments: PhotoAdjustments): Uri {
+    override suspend fun saveEditedPhoto(
+        sourcePhoto: PhotoItem,
+        adjustments: PhotoAdjustments,
+        crop: PhotoCrop
+    ): Uri {
         return saveEditedPhotoResult
     }
 }
