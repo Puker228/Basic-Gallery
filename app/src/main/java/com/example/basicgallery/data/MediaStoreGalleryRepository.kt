@@ -156,6 +156,7 @@ class MediaStoreGalleryRepository(
             MediaStore.Video.Media._ID,
             MediaStore.Video.Media.DATE_TAKEN,
             MediaStore.Video.Media.DATE_ADDED,
+            MediaStore.Video.Media.DURATION,
             MediaStore.MediaColumns.SIZE
         )
 
@@ -198,12 +199,14 @@ class MediaStoreGalleryRepository(
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
             val dateTakenColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_TAKEN)
             val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+            val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
 
             while (cursor.moveToNext()) {
                 val rawId = cursor.getLong(idColumn)
                 val dateTaken = cursor.getLong(dateTakenColumn)
                 val dateAdded = cursor.getLong(dateAddedColumn)
+                val durationMillis = cursor.getLong(durationColumn).coerceAtLeast(0L)
                 val sizeBytes = cursor.getLong(sizeColumn).coerceAtLeast(0L)
                 val normalizedDate = if (dateTaken > 0L) dateTaken else dateAdded * 1000L
                 val stableId = -(rawId + 1L)
@@ -219,6 +222,7 @@ class MediaStoreGalleryRepository(
                         contentUri = contentUri,
                         dateTakenMillis = normalizedDate,
                         sizeBytes = sizeBytes,
+                        durationMillis = durationMillis,
                         mediaType = MediaType.VIDEO
                     )
                 )

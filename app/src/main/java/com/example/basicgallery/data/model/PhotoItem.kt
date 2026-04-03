@@ -12,5 +12,6 @@ data class PhotoItem(
     val contentUri: Uri,
     val dateTakenMillis: Long,
     val sizeBytes: Long = 0L,
+    val durationMillis: Long = 0L,
     val mediaType: MediaType = MediaType.PHOTO
 )

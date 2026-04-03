@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -798,6 +799,23 @@ private fun PhotoGridItem(
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
             )
         }
+
+        if (photo.mediaType == MediaType.VIDEO) {
+            Surface(
+                color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.75f),
+                shape = MaterialTheme.shapes.extraSmall,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+            ) {
+                Text(
+                    text = formatVideoDuration(photo.durationMillis),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
     }
 }
 
@@ -1060,6 +1078,19 @@ private fun formatMediaDateTime(
         .ofEpochMilli(timestampMillis.coerceAtLeast(0L))
         .atZone(zoneId)
         .format(formatter)
+}
+
+private fun formatVideoDuration(durationMillis: Long): String {
+    val totalSeconds = (durationMillis / 1_000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3_600L
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        val remainingMinutes = (totalSeconds % 3_600L) / 60L
+        String.format(Locale.US, "%02d:%02d:%02d", hours, remainingMinutes, seconds)
+    } else {
+        String.format(Locale.US, "%02d:%02d", minutes, seconds)
+    }
 }
 
 @Composable
