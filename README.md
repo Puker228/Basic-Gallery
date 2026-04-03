@@ -6,23 +6,28 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 
 - Requests runtime permissions for local media access.
 - Loads photos, videos, and trashed media from `MediaStore`, sorted by capture date.
-- Top app bar section switcher with dropdown (`Photos` / `Trash`) and arrow indicator.
+- Top app bar section switcher with tabs (`Photos` / `Trash`).
 - Groups photos by day with localized section labels (for example, Today/Yesterday).
 - Pull-down reveal shows section media counters (`Photos: X • Videos: Y`).
 - Day headers in Photos include a right-aligned `Select all` action for that date.
 - Displays media in a 3-column grid.
 - Video thumbnails use the first video frame and show duration at bottom-right (`MM:SS`, or `HH:MM:SS` for videos 1 hour+).
 - Full-screen media viewer supports left/right swiping across all items in the current section (photos + videos).
-- Full-screen photo view shows capture date/time and bottom actions (`Edit`, `Delete`).
+- Full-screen photo view shows capture date/time.
+- In full-screen photo view:
+  - In `Photos`, bottom actions are `Edit` and `Delete`.
+  - In `Trash`, only `Delete` is shown.
 - Built-in photo editor supports `Exposure`, `Brightness`, `Contrast`, and `Sharpness`.
 - Built-in photo editor supports an interactive crop frame with draggable corner handles.
 - Saving an edited photo creates a new file and keeps the original photo unchanged.
 - Edited copy keeps the original photo capture date.
 - Full-screen video view shows capture date/time, has a simple player, and bottom `Delete` action.
+- Full-screen `Delete` behavior depends on section:
+  - In `Photos`, `Delete` moves media to trash.
+  - In `Trash`, `Delete` permanently removes media.
 - Photos section: multi-select and move to trash.
 - Trash section:
-  - Title shows total size of photos in trash (`Trash (228 MB)` style).
-  - Top-right `Delete all` action for all trash photos.
+  - Top-right `Delete all` action for all items currently in trash.
   - In selection mode, top app bar `Actions` menu provides `Restore` and `Delete`.
 - Uses `MediaStore.createTrashRequest(..., false)` for restore and `MediaStore.createDeleteRequest(...)` for permanent delete on Android 11+.
 

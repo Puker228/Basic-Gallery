@@ -16,7 +16,7 @@ Keep feature code in `app/src/main/java/...` and mirror package structure in tes
 ## Product Behavior Snapshot
 Current main-screen behavior (keep docs and code aligned when changing it):
 
-- Section switcher is in the top app bar title area as a dropdown with arrow icon.
+- Section switcher is in the top app bar title area as tabs.
 - Available sections: `Фото/Photos` and `Корзина/Trash`.
 - Photos are grouped by date with localized labels (Today/Yesterday and local date format).
 - Pull-down reveal shows section media counters (`Фото: X • Видео: Y` / `Photos: X • Videos: Y`).
@@ -26,7 +26,8 @@ Current main-screen behavior (keep docs and code aligned when changing it):
   - `HH:MM:SS` for videos 1 hour or longer.
 - Full-screen photo viewer:
   - Top bar shows photo creation date/time.
-  - Bottom actions: `Edit` and `Delete`.
+  - In `Фото/Photos`, bottom actions: `Edit` and `Delete`.
+  - In `Корзина/Trash`, only bottom action `Delete` is shown.
   - `Edit` opens an in-app photo editor with controls for `Exposure/Выдержка`, `Brightness/Яркость`, `Contrast/Контраст`, and `Sharpness/Резкость`.
   - Editor supports an interactive crop frame with draggable corner handles.
   - Saving creates a new photo without deleting the original.
@@ -35,11 +36,13 @@ Current main-screen behavior (keep docs and code aligned when changing it):
   - Top bar shows video creation date/time.
   - Uses a simple inline player.
   - Bottom action: `Delete`.
+- Full-screen `Delete` behavior:
+  - In `Фото/Photos`, `Delete` moves media to trash.
+  - In `Корзина/Trash`, `Delete` permanently deletes media.
 - In `Фото/Photos`, multi-select moves chosen photos to trash.
-- Trash title includes total photo size in brackets (`Корзина (228 МБ)` style).
 - In `Фото/Photos`, each day header includes a right-aligned `Выбрать всё/Select all` action that selects all photos for that date.
 - Trash supports:
-  - `Delete all` action in top-right corner.
+  - `Delete all` action in top-right corner for all items in trash.
   - In selection mode, top app bar `Actions` menu with `Restore` and `Delete`.
   - Restore via MediaStore untrash API and permanent delete via MediaStore delete API (Android 11+).
 
