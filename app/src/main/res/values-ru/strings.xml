@@ -14,6 +14,7 @@
     <string name="back">Назад</string>
     <string name="delete">Удалить</string>
     <string name="delete_all">Удалить всё</string>
+    <string name="select_all">Выбрать всё</string>
     <string name="restore">Восстановить</string>
     <string name="actions">Действия</string>
     <string name="cancel">Отмена</string>
