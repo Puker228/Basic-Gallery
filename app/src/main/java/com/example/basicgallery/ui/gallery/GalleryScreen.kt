@@ -129,6 +129,28 @@ private data class PendingMediaRequest(
     val closeViewerAfterSuccess: Boolean
 )
 
+internal fun createFullscreenDeleteHandler(
+    openedFromTrash: Boolean,
+    launchMoveToTrashRequest: (photoUris: List<Uri>, closeViewerAfterSuccess: Boolean) -> Unit,
+    launchDeleteRequest: (photoUris: List<Uri>, closeViewerAfterSuccess: Boolean) -> Unit
+): (Uri) -> Unit {
+    return if (openedFromTrash) {
+        { uri ->
+            launchDeleteRequest(
+                listOf(uri),
+                true
+            )
+        }
+    } else {
+        { uri ->
+            launchMoveToTrashRequest(
+                listOf(uri),
+                true
+            )
+        }
+    }
+}
+
 @Composable
 fun GalleryRoute(viewModel: GalleryViewModel) {
     val context = LocalContext.current
@@ -212,12 +234,13 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         )
     }
 
-    fun launchDeleteRequest(photoUris: List<Uri>) {
+    fun launchDeleteRequest(photoUris: List<Uri>, closeViewerAfterSuccess: Boolean = false) {
         if (photoUris.isEmpty()) return
 
         launchMediaRequest(
             intentSender = viewModel.createDeleteRequest(photoUris),
-            unsupportedMessageRes = R.string.delete_not_supported
+            unsupportedMessageRes = R.string.delete_not_supported,
+            closeViewerAfterSuccess = closeViewerAfterSuccess
         )
     }
 
@@ -296,16 +319,11 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                         editorPhotoDateTakenMillis = media.dateTakenMillis
                     }
                 }
-                val onDeleteRequest: ((Uri) -> Unit)? = if (selectedMediaOpenedFromTrash) {
-                    null
-                } else {
-                    { uri ->
-                        launchMoveToTrashRequest(
-                            photoUris = listOf(uri),
-                            closeViewerAfterSuccess = true
-                        )
-                    }
-                }
+                val onDeleteRequest = createFullscreenDeleteHandler(
+                    openedFromTrash = selectedMediaOpenedFromTrash,
+                    launchMoveToTrashRequest = ::launchMoveToTrashRequest,
+                    launchDeleteRequest = ::launchDeleteRequest
+                )
                 val mediaUri = Uri.parse(openedMediaUri)
 
                 FullscreenMediaScreen(
