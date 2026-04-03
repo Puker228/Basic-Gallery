@@ -21,6 +21,8 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,13 +54,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -426,6 +434,21 @@ private fun FullscreenPhotoScreen(
 
     val context = LocalContext.current
     val density = LocalDensity.current
+    var scale by remember(photoUri) { mutableFloatStateOf(1f) }
+    var translation by remember(photoUri) { mutableStateOf(Offset.Zero) }
+    val doubleTapScale = 2.5f
+
+    fun clampTranslation(currentScale: Float, currentTranslation: Offset, width: Float, height: Float): Offset {
+        if (currentScale <= 1f) return Offset.Zero
+
+        val maxX = ((currentScale - 1f) * width) / 2f
+        val maxY = ((currentScale - 1f) * height) / 2f
+
+        return Offset(
+            x = currentTranslation.x.coerceIn(-maxX, maxX),
+            y = currentTranslation.y.coerceIn(-maxY, maxY)
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -452,6 +475,8 @@ private fun FullscreenPhotoScreen(
         ) {
             val widthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
             val heightPx = with(density) { maxHeight.roundToPx().coerceAtLeast(1) }
+            val width = widthPx.toFloat()
+            val height = heightPx.toFloat()
             val request = remember(photoUri, context, widthPx, heightPx) {
                 ImageRequest.Builder(context)
                     .data(photoUri)
@@ -468,7 +493,56 @@ private fun FullscreenPhotoScreen(
                 model = request,
                 contentDescription = stringResource(id = R.string.photo_content_description),
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clipToBounds()
+                    .pointerInput(photoUri, widthPx, heightPx) {
+                        detectTapGestures(
+                            onDoubleTap = { tapOffset ->
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    translation = Offset.Zero
+                                } else {
+                                    val center = Offset(width / 2f, height / 2f)
+                                    val delta = tapOffset - center
+                                    val targetScale = doubleTapScale
+                                    val targetTranslation = Offset(
+                                        x = -delta.x * (targetScale - 1f),
+                                        y = -delta.y * (targetScale - 1f)
+                                    )
+
+                                    scale = targetScale
+                                    translation = clampTranslation(
+                                        currentScale = targetScale,
+                                        currentTranslation = targetTranslation,
+                                        width = width,
+                                        height = height
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    .pointerInput(photoUri, widthPx, heightPx) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val updatedScale = (scale * zoom).coerceIn(1f, 5f)
+                            val updatedTranslation = clampTranslation(
+                                currentScale = updatedScale,
+                                currentTranslation = translation + pan,
+                                width = width,
+                                height = height
+                            )
+
+                            scale = updatedScale
+                            translation = updatedTranslation
+                        }
+                    }
+                    .graphicsLayer {
+                        transformOrigin = TransformOrigin.Center
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = translation.x
+                        translationY = translation.y
+                    }
             )
         }
     }
