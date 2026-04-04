@@ -8,6 +8,7 @@ import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.graphics.Rect
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,6 +20,9 @@ import com.example.basicgallery.data.model.PhotoCrop
 import com.example.basicgallery.data.model.PhotoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -102,6 +106,7 @@ class MediaStoreGalleryRepository(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DATE_TAKEN,
             MediaStore.Images.Media.DATE_ADDED,
+            MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.SIZE
         )
 
@@ -144,14 +149,20 @@ class MediaStoreGalleryRepository(
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             val dateTakenColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
             val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+            val displayNameColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
                 val dateTaken = cursor.getLong(dateTakenColumn)
                 val dateAdded = cursor.getLong(dateAddedColumn)
+                val displayName = cursor.getString(displayNameColumn)
                 val sizeBytes = cursor.getLong(sizeColumn).coerceAtLeast(0L)
-                val normalizedDate = if (dateTaken > 0L) dateTaken else dateAdded * 1000L
+                val normalizedDate = EditedPhotoNameCodec.resolveDateTakenMillis(
+                    dateTakenMillis = dateTaken,
+                    dateAddedSeconds = dateAdded,
+                    displayName = displayName
+                )
 
                 val contentUri = ContentUris.withAppendedId(
                     collection,
@@ -315,11 +326,16 @@ class MediaStoreGalleryRepository(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
         val insertValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, buildEditedDisplayName(sourceMetadata.displayName, outputMimeType))
+            put(
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                EditedPhotoNameCodec.buildDisplayName(
+                    originalName = sourceMetadata.displayName,
+                    mimeType = outputMimeType,
+                    sourceDateTakenMillis = dateTakenMillis
+                )
+            )
             put(MediaStore.MediaColumns.MIME_TYPE, outputMimeType)
-            if (dateTakenMillis > 0L) {
-                put(MediaStore.Images.Media.DATE_TAKEN, dateTakenMillis)
-            }
+            putCaptureTimestampColumns(dateTakenMillis)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Images.Media.IS_PENDING, 1)
                 put(
@@ -339,13 +355,16 @@ class MediaStoreGalleryRepository(
                     throw IllegalStateException("Unable to encode edited photo.")
                 }
             } ?: throw IllegalStateException("Unable to open output stream for edited photo.")
+            writeCaptureExifTimestamp(
+                targetUri = insertedUri,
+                outputMimeType = outputMimeType,
+                dateTakenMillis = dateTakenMillis
+            )
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val publishValues = ContentValues().apply {
                     put(MediaStore.Images.Media.IS_PENDING, 0)
-                    if (dateTakenMillis > 0L) {
-                        put(MediaStore.Images.Media.DATE_TAKEN, dateTakenMillis)
-                    }
+                    putCaptureTimestampColumns(dateTakenMillis)
                 }
                 contentResolver.update(insertedUri, publishValues, null, null)
             }
@@ -426,19 +445,6 @@ class MediaStoreGalleryRepository(
         }
     }
 
-    private fun buildEditedDisplayName(originalName: String?, mimeType: String): String {
-        val baseName = originalName
-            ?.substringBeforeLast('.', missingDelimiterValue = originalName)
-            ?.takeIf { it.isNotBlank() }
-            ?: "IMG_${System.currentTimeMillis()}"
-        val extension = when (mimeType) {
-            MIME_TYPE_PNG -> "png"
-            MIME_TYPE_WEBP -> "webp"
-            else -> "jpg"
-        }
-        return "${baseName}_edited_${System.currentTimeMillis()}.$extension"
-    }
-
     @Suppress("DEPRECATION")
     private fun compressFormatForMimeType(mimeType: String): Bitmap.CompressFormat {
         return when (mimeType) {
@@ -457,6 +463,36 @@ class MediaStoreGalleryRepository(
     private fun Cursor.getStringOrNull(columnName: String): String? {
         val index = getColumnIndex(columnName)
         return if (index >= 0 && !isNull(index)) getString(index) else null
+    }
+
+    private fun ContentValues.putCaptureTimestampColumns(dateTakenMillis: Long) {
+        if (dateTakenMillis <= 0L) return
+        val dateSeconds = (dateTakenMillis / 1_000L).coerceAtLeast(0L)
+        put(MediaStore.Images.Media.DATE_TAKEN, dateTakenMillis)
+        put(MediaStore.MediaColumns.DATE_ADDED, dateSeconds)
+        put(MediaStore.MediaColumns.DATE_MODIFIED, dateSeconds)
+    }
+
+    private fun writeCaptureExifTimestamp(
+        targetUri: Uri,
+        outputMimeType: String,
+        dateTakenMillis: Long
+    ) {
+        if (dateTakenMillis <= 0L) return
+        if (outputMimeType != MIME_TYPE_JPEG && outputMimeType != MIME_TYPE_WEBP) return
+
+        runCatching {
+            contentResolver.openFileDescriptor(targetUri, "rw")?.use { descriptor ->
+                val exif = ExifInterface(descriptor.fileDescriptor)
+                val exifDateTime = EXIF_DATE_TIME_FORMATTER.format(
+                    Instant.ofEpochMilli(dateTakenMillis).atZone(ZoneId.systemDefault())
+                )
+                exif.setAttribute(ExifInterface.TAG_DATETIME, exifDateTime)
+                exif.setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, exifDateTime)
+                exif.setAttribute(ExifInterface.TAG_DATETIME_DIGITIZED, exifDateTime)
+                exif.saveAttributes()
+            }
+        }
     }
 
     private fun buildQueryArgs(
@@ -488,6 +524,8 @@ class MediaStoreGalleryRepository(
         const val MIME_TYPE_JPEG = "image/jpeg"
         const val MIME_TYPE_PNG = "image/png"
         const val MIME_TYPE_WEBP = "image/webp"
+        val EXIF_DATE_TIME_FORMATTER: DateTimeFormatter =
+            DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss", Locale.US)
         val DEFAULT_RELATIVE_PATH = "${Environment.DIRECTORY_PICTURES}/Basic Gallery"
     }
 }
