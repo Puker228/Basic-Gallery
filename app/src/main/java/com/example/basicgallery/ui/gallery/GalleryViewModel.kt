@@ -102,6 +102,14 @@ class GalleryViewModel(
         }
     }
 
+    fun deselectPhotos(photoIds: Collection<Long>) {
+        if (photoIds.isEmpty()) return
+
+        _uiState.update { current ->
+            current.copy(selectedPhotoIds = current.selectedPhotoIds - photoIds.toSet())
+        }
+    }
+
     fun clearSelection() {
         _uiState.update { current ->
             if (current.selectedPhotoIds.isEmpty()) current else current.copy(selectedPhotoIds = emptySet())

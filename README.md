@@ -9,7 +9,7 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 - Top app bar title area contains a section switcher with tabs (`Photos` / `Trash`).
 - Groups photos by day with localized section labels (for example, Today/Yesterday).
 - Pull-down reveal shows section media counters (`Photos: X • Videos: Y`).
-- Day headers in Photos include a right-aligned `Select all` action for that date.
+- Day headers in Photos include a right-aligned `Select all` action that toggles to `Cancel selection` when all media in that date section is selected.
 - Displays media in a 3-column grid.
 - Right-side interactive timeline scrollbar supports tap/drag scrubbing; while dragging it shows year markers and a floating `Month Year` hint near the thumb.
 - Video thumbnails use the first video frame and show duration at bottom-right (`MM:SS`, or `HH:MM:SS` for videos 1 hour+).
@@ -26,7 +26,7 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 - Full-screen `Delete` behavior depends on section:
   - In `Photos`, `Delete` moves media to trash.
   - In `Trash`, `Delete` permanently removes media.
-- Photos section: multi-select and move to trash.
+- Photos section: multi-select with a centered top selected counter, top-left close (`X`) button, and a fixed bottom `Delete` action on a white bottom bar.
 - Trash section:
   - Top-right `Delete all` action for all items currently in trash.
   - In selection mode, top app bar `Actions` menu provides `Restore` and `Delete`.

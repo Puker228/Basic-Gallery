@@ -24,11 +24,14 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -54,9 +57,12 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -88,8 +94,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -140,6 +148,10 @@ internal const val GALLERY_CONTENT_PAGER_TAG = "gallery_content_pager"
 internal const val GALLERY_GRID_TAG = "gallery_grid"
 internal const val GALLERY_SCROLLBAR_TAG = "gallery_scrollbar"
 internal const val GALLERY_SCROLLBAR_HINT_TAG = "gallery_scrollbar_hint"
+
+private val SelectionCheckboxBlue = Color(0xFF0C84FF)
+private val SelectionActionBackground = Color(0xFFF5F5F5)
+private val SelectionActionTextColor = Color(0xFF333333)
 
 internal enum class GalleryTab {
     PHOTOS,
@@ -551,6 +563,9 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     onSelectPhotos = { photoIds ->
                         viewModel.selectPhotos(photoIds)
                     },
+                    onDeselectPhotos = { photoIds ->
+                        viewModel.deselectPhotos(photoIds)
+                    },
                     onDeleteSelected = {
                         val selectedUris = uiState.photos
                             .asSequence()
@@ -603,6 +618,7 @@ internal fun GalleryScreen(
     onPhotoClick: (PhotoItem) -> Unit,
     onPhotoLongClick: (PhotoItem) -> Unit,
     onSelectPhotos: (Collection<Long>) -> Unit,
+    onDeselectPhotos: (Collection<Long>) -> Unit,
     onDeleteSelected: () -> Unit,
     onRestoreSelected: () -> Unit,
     onDeleteSelectedFromTrash: () -> Unit,
@@ -696,46 +712,44 @@ internal fun GalleryScreen(
     Scaffold(
         topBar = {
             Column {
-                TopAppBar(
-                    modifier = Modifier.testTag(GALLERY_TOP_APP_BAR_TAG),
-                    title = {
-                        if (uiState.isSelectionMode) {
+                if (uiState.isSelectionMode) {
+                    CenterAlignedTopAppBar(
+                        modifier = Modifier.testTag(GALLERY_TOP_APP_BAR_TAG),
+                        navigationIcon = {
+                            IconButton(onClick = onClearSelection) {
+                                CloseSelectionIcon()
+                            }
+                        },
+                        title = {
                             Text(
                                 text = stringResource(
                                     id = R.string.gallery_selected_count,
                                     uiState.selectedCount
                                 )
                             )
-                        } else {
-                            GallerySectionTabs(
-                                currentTab = currentTab,
-                                onTabSelected = onTabSelected,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    },
-                    actions = {
-                        if (uiState.isSelectionMode) {
+                        },
+                        actions = {
                             if (isTrashTab) {
                                 TrashSelectionPopupMenu(
                                     onRestoreSelected = onRestoreSelected,
                                     onDeleteSelected = onDeleteSelectedFromTrash,
                                     hasSelection = uiState.selectedCount > 0
                                 )
-                            } else {
-                                TextButton(
-                                    onClick = onDeleteSelected,
-                                    enabled = uiState.selectedCount > 0
-                                ) {
-                                    Text(text = stringResource(id = R.string.delete))
-                                }
-                            }
-                            TextButton(onClick = onClearSelection) {
-                                Text(text = stringResource(id = R.string.cancel))
                             }
                         }
-                    }
-                )
+                    )
+                } else {
+                    TopAppBar(
+                        modifier = Modifier.testTag(GALLERY_TOP_APP_BAR_TAG),
+                        title = {
+                            GallerySectionTabs(
+                                currentTab = currentTab,
+                                onTabSelected = onTabSelected,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    )
+                }
 
                 if (!uiState.isSelectionMode && isTrashTab) {
                     Row(
@@ -752,6 +766,14 @@ internal fun GalleryScreen(
                         }
                     }
                 }
+            }
+        },
+        bottomBar = {
+            if (uiState.isSelectionMode && !isTrashTab) {
+                SelectionBottomDeleteBar(
+                    onDeleteSelected = onDeleteSelected,
+                    enabled = uiState.selectedCount > 0
+                )
             }
         }
     ) { innerPadding ->
@@ -844,14 +866,21 @@ internal fun GalleryScreen(
                                             span = { GridItemSpan(maxLineSpan) },
                                             contentType = "day_header"
                                         ) {
+                                            val sectionPhotoIds = section.photos.map { photo -> photo.id }
+                                            val isSectionFullySelected = sectionPhotoIds.isNotEmpty() &&
+                                                sectionPhotoIds.all { photoId ->
+                                                    photoId in uiState.selectedPhotoIds
+                                                }
                                             DaySectionHeader(
                                                 label = section.label,
-                                                showSelectAll = !isTrashPage,
-                                                isSelectAllEnabled = section.photos.any { photo ->
-                                                    photo.id !in uiState.selectedPhotoIds
-                                                },
-                                                onSelectAll = {
-                                                    onSelectPhotos(section.photos.map { photo -> photo.id })
+                                                showSelectionAction = !isTrashPage,
+                                                isSectionFullySelected = isSectionFullySelected,
+                                                onToggleSectionSelection = {
+                                                    if (isSectionFullySelected) {
+                                                        onDeselectPhotos(sectionPhotoIds)
+                                                    } else {
+                                                        onSelectPhotos(sectionPhotoIds)
+                                                    }
                                                 }
                                             )
                                         }
@@ -864,6 +893,7 @@ internal fun GalleryScreen(
                                             PhotoGridItem(
                                                 photo = photo,
                                                 imageLoader = imageLoader,
+                                                isSelectionMode = uiState.isSelectionMode,
                                                 isSelected = photo.id in uiState.selectedPhotoIds,
                                                 onClick = { onPhotoClick(photo) },
                                                 onLongClick = { onPhotoLongClick(photo) }
@@ -1200,11 +1230,130 @@ private fun TrashSelectionPopupMenu(
 }
 
 @Composable
+private fun SelectionBottomDeleteBar(
+    onDeleteSelected: () -> Unit,
+    enabled: Boolean
+) {
+    Surface(
+        color = Color.White,
+        tonalElevation = 3.dp
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Button(
+                onClick = onDeleteSelected,
+                enabled = enabled,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SelectionActionBackground,
+                    contentColor = SelectionActionTextColor
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    disabledElevation = 0.dp
+                ),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 26.dp, vertical = 10.dp)
+            ) {
+                Text(text = stringResource(id = R.string.delete))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloseSelectionIcon(modifier: Modifier = Modifier) {
+    val iconColor = MaterialTheme.colorScheme.onSurface
+    Canvas(
+        modifier = modifier
+            .width(18.dp)
+            .height(18.dp)
+    ) {
+        val strokeWidth = size.minDimension * 0.14f
+        drawLine(
+            color = iconColor,
+            start = Offset(x = size.width * 0.2f, y = size.height * 0.2f),
+            end = Offset(x = size.width * 0.8f, y = size.height * 0.8f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+        drawLine(
+            color = iconColor,
+            start = Offset(x = size.width * 0.8f, y = size.height * 0.2f),
+            end = Offset(x = size.width * 0.2f, y = size.height * 0.8f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun SelectionCheckbox(
+    isSelected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .width(22.dp)
+            .height(22.dp)
+            .clip(CircleShape)
+            .background(
+                if (isSelected) {
+                    SelectionCheckboxBlue
+                } else {
+                    Color.White.copy(alpha = 0.96f)
+                }
+            )
+            .then(
+                if (isSelected) {
+                    Modifier
+                } else {
+                    Modifier.border(
+                        width = 1.dp,
+                        color = Color(0xFFBDBDBD),
+                        shape = CircleShape
+                    )
+                }
+            )
+    ) {
+        if (isSelected) {
+            Canvas(
+                modifier = Modifier
+                    .width(11.dp)
+                    .height(11.dp)
+            ) {
+                val strokeWidth = size.minDimension * 0.2f
+                drawLine(
+                    color = Color.White,
+                    start = Offset(x = size.width * 0.1f, y = size.height * 0.55f),
+                    end = Offset(x = size.width * 0.42f, y = size.height * 0.86f),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = Color.White,
+                    start = Offset(x = size.width * 0.42f, y = size.height * 0.86f),
+                    end = Offset(x = size.width * 0.9f, y = size.height * 0.18f),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DaySectionHeader(
     label: String,
-    showSelectAll: Boolean,
-    isSelectAllEnabled: Boolean,
-    onSelectAll: () -> Unit
+    showSelectionAction: Boolean,
+    isSectionFullySelected: Boolean,
+    onToggleSectionSelection: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -1217,12 +1366,23 @@ private fun DaySectionHeader(
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
         )
         Spacer(modifier = Modifier.weight(1f))
-        if (showSelectAll) {
-            TextButton(
-                onClick = onSelectAll,
-                enabled = isSelectAllEnabled
+        if (showSelectionAction) {
+            Button(
+                onClick = onToggleSectionSelection,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SelectionActionBackground,
+                    contentColor = SelectionActionTextColor
+                ),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Text(text = stringResource(id = R.string.select_all))
+                Text(
+                    text = if (isSectionFullySelected) {
+                        stringResource(id = R.string.cancel_selection)
+                    } else {
+                        stringResource(id = R.string.select_all)
+                    }
+                )
             }
         }
     }
@@ -1232,6 +1392,7 @@ private fun DaySectionHeader(
 private fun PhotoGridItem(
     photo: PhotoItem,
     imageLoader: ImageLoader,
+    isSelectionMode: Boolean,
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
@@ -1280,7 +1441,16 @@ private fun PhotoGridItem(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                    .background(SelectionCheckboxBlue.copy(alpha = 0.28f))
+            )
+        }
+
+        if (isSelectionMode) {
+            SelectionCheckbox(
+                isSelected = isSelected,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
             )
         }
 
