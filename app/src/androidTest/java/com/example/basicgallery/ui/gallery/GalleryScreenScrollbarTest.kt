@@ -2,13 +2,10 @@ package com.example.basicgallery.ui.gallery
 
 import android.net.Uri
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -17,8 +14,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import coil.ImageLoader
 import com.example.basicgallery.data.model.PhotoItem
 import com.example.basicgallery.ui.theme.BasicGalleryTheme
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,44 +25,31 @@ class GalleryScreenScrollbarTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun photosGrid_scrollbarAppearsOnlyWhileScrolling() {
-        lateinit var gridState: LazyGridState
-        lateinit var scrollScope: CoroutineScope
-
+    fun photosGrid_scrollbarIsVisibleWhenContentScrollable() {
         setGalleryContent(
             uiState = GalleryUiState(
                 photos = createPhotos(count = 240),
                 photoCount = 240
-            ),
-            onStateReady = { readyGridState, readyScope ->
-                gridState = readyGridState
-                scrollScope = readyScope
-            }
+            )
         )
 
         composeRule.onNodeWithTag(GALLERY_GRID_TAG).assertExists()
-        composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertDoesNotExist()
-
-        composeRule.mainClock.autoAdvance = false
-        composeRule.runOnIdle {
-            scrollScope.launch {
-                gridState.animateScrollToItem(index = 180)
-            }
-        }
-
-        composeRule.mainClock.advanceTimeBy(96L)
-        composeRule.runOnIdle {}
         composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertExists()
+    }
 
-        composeRule.mainClock.autoAdvance = true
-        composeRule.waitForIdle()
+    @Test
+    fun photosGrid_scrollbarHiddenWhenAllItemsFitOnScreen() {
+        setGalleryContent(
+            uiState = GalleryUiState(
+                photos = createPhotos(count = 3),
+                photoCount = 3
+            )
+        )
+
         composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertDoesNotExist()
     }
 
-    private fun setGalleryContent(
-        uiState: GalleryUiState,
-        onStateReady: (LazyGridState, CoroutineScope) -> Unit
-    ) {
+    private fun setGalleryContent(uiState: GalleryUiState) {
         composeRule.setContent {
             var currentTab by remember { mutableStateOf(GalleryTab.PHOTOS) }
             val context = LocalContext.current
@@ -76,10 +58,6 @@ class GalleryScreenScrollbarTest {
             }
             val photosGridState = rememberLazyGridState()
             val trashGridState = rememberLazyGridState()
-            val scope = rememberCoroutineScope()
-            SideEffect {
-                onStateReady(photosGridState, scope)
-            }
 
             BasicGalleryTheme {
                 GalleryScreen(

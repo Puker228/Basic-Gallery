@@ -6,11 +6,12 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 
 - Requests runtime permissions for local media access.
 - Loads photos, videos, and trashed media from `MediaStore`, sorted by capture date.
-- Top app bar section switcher with tabs (`Photos` / `Trash`).
+- Top app bar title area contains a section switcher with tabs (`Photos` / `Trash`).
 - Groups photos by day with localized section labels (for example, Today/Yesterday).
 - Pull-down reveal shows section media counters (`Photos: X • Videos: Y`).
 - Day headers in Photos include a right-aligned `Select all` action for that date.
 - Displays media in a 3-column grid.
+- Right-side interactive timeline scrollbar supports tap/drag scrubbing; while dragging it shows year markers and a floating `Month Year` hint near the thumb.
 - Video thumbnails use the first video frame and show duration at bottom-right (`MM:SS`, or `HH:MM:SS` for videos 1 hour+).
 - Full-screen media viewer supports left/right swiping across all items in the current section (photos + videos).
 - Full-screen photo view shows capture date/time.

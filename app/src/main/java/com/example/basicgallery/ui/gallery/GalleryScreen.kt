@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -71,9 +72,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -99,6 +102,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
 import androidx.core.app.ActivityCompat
@@ -120,10 +124,13 @@ import com.example.basicgallery.R
 import com.example.basicgallery.data.model.MediaType
 import com.example.basicgallery.data.model.PhotoItem
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 internal const val GALLERY_TOP_APP_BAR_TAG = "gallery_top_app_bar"
 internal const val GALLERY_TAB_ROW_TAG = "gallery_tab_row"
@@ -132,6 +139,7 @@ internal const val GALLERY_TAB_TRASH_TAG = "gallery_tab_trash"
 internal const val GALLERY_CONTENT_PAGER_TAG = "gallery_content_pager"
 internal const val GALLERY_GRID_TAG = "gallery_grid"
 internal const val GALLERY_SCROLLBAR_TAG = "gallery_scrollbar"
+internal const val GALLERY_SCROLLBAR_HINT_TAG = "gallery_scrollbar_hint"
 
 internal enum class GalleryTab {
     PHOTOS,
@@ -161,6 +169,17 @@ internal data class GridScrollbarMetrics(
     val thumbHeightFraction: Float
 )
 
+internal data class GridTimelineSectionAnchor(
+    val day: LocalDate,
+    val startIndex: Int,
+    val endIndexExclusive: Int
+)
+
+internal data class GridTimelineYearMarker(
+    val year: Int,
+    val offsetFraction: Float
+)
+
 internal fun calculateGridScrollbarMetrics(
     totalItemsCount: Int,
     firstVisibleItemIndex: Int,
@@ -182,6 +201,105 @@ internal fun calculateGridScrollbarMetrics(
         thumbOffsetFraction = thumbOffsetFraction,
         thumbHeightFraction = thumbHeightFraction
     )
+}
+
+internal fun buildTimelineSectionAnchors(
+    sections: List<PhotoDaySection>
+): List<GridTimelineSectionAnchor> {
+    if (sections.isEmpty()) return emptyList()
+
+    val anchors = ArrayList<GridTimelineSectionAnchor>(sections.size)
+    var currentIndex = 0
+
+    sections.forEach { section ->
+        val sectionSize = (section.photos.size + 1).coerceAtLeast(1)
+        val startIndex = currentIndex
+        val endIndexExclusive = startIndex + sectionSize
+
+        anchors += GridTimelineSectionAnchor(
+            day = section.day,
+            startIndex = startIndex,
+            endIndexExclusive = endIndexExclusive
+        )
+        currentIndex = endIndexExclusive
+    }
+
+    return anchors
+}
+
+internal fun gridIndexForScrollbarFraction(
+    fraction: Float,
+    totalItemsCount: Int
+): Int {
+    if (totalItemsCount <= 1) return 0
+
+    val maxIndex = totalItemsCount - 1
+    return (fraction.coerceIn(0f, 1f) * maxIndex.toFloat())
+        .roundToInt()
+        .coerceIn(0, maxIndex)
+}
+
+internal fun findTimelineDayForGridIndex(
+    itemIndex: Int,
+    timelineSectionAnchors: List<GridTimelineSectionAnchor>
+): LocalDate? {
+    if (timelineSectionAnchors.isEmpty()) return null
+
+    val lastIndex = timelineSectionAnchors.last().endIndexExclusive - 1
+    if (lastIndex < 0) return null
+    val clampedIndex = itemIndex.coerceIn(0, lastIndex)
+
+    var left = 0
+    var right = timelineSectionAnchors.lastIndex
+
+    while (left <= right) {
+        val mid = (left + right).ushr(1)
+        val anchor = timelineSectionAnchors[mid]
+        when {
+            clampedIndex < anchor.startIndex -> right = mid - 1
+            clampedIndex >= anchor.endIndexExclusive -> left = mid + 1
+            else -> return anchor.day
+        }
+    }
+
+    return timelineSectionAnchors.lastOrNull { clampedIndex >= it.startIndex }?.day
+}
+
+internal fun calculateTimelineYearMarkers(
+    timelineSectionAnchors: List<GridTimelineSectionAnchor>,
+    totalItemsCount: Int
+): List<GridTimelineYearMarker> {
+    if (timelineSectionAnchors.isEmpty() || totalItemsCount <= 1) return emptyList()
+
+    val yearToStartIndex = LinkedHashMap<Int, Int>()
+    timelineSectionAnchors.forEach { anchor ->
+        yearToStartIndex.putIfAbsent(anchor.day.year, anchor.startIndex)
+    }
+
+    val maxIndex = (totalItemsCount - 1).coerceAtLeast(1).toFloat()
+    return yearToStartIndex.map { (year, startIndex) ->
+        GridTimelineYearMarker(
+            year = year,
+            offsetFraction = (startIndex.toFloat() / maxIndex).coerceIn(0f, 1f)
+        )
+    }
+}
+
+internal fun formatTimelineMonthYearLabel(
+    day: LocalDate,
+    locale: Locale
+): String {
+    val rawLabel = day
+        .format(DateTimeFormatter.ofPattern("LLLL yyyy", locale))
+        .replace(".", "")
+
+    return rawLabel.replaceFirstChar { firstChar ->
+        if (firstChar.isLowerCase()) {
+            firstChar.titlecase(locale)
+        } else {
+            firstChar.toString()
+        }
+    }
 }
 
 internal fun createFullscreenDeleteHandler(
@@ -662,6 +780,9 @@ internal fun GalleryScreen(
                         locale = locale
                     )
                 }
+                val timelineSectionAnchors = remember(pagePhotoSections) {
+                    buildTimelineSectionAnchors(pagePhotoSections)
+                }
                 val emptyStateText = if (isTrashPage) {
                     stringResource(id = R.string.trash_empty_state)
                 } else {
@@ -681,7 +802,7 @@ internal fun GalleryScreen(
                         )
                     }
                 }
-                val showScrollbar = pageGridState.isScrollInProgress && scrollbarMetrics != null
+                val showScrollbar = scrollbarMetrics != null
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
@@ -753,7 +874,11 @@ internal fun GalleryScreen(
 
                                 if (showScrollbar && scrollbarMetrics != null) {
                                     GalleryGridScrollbar(
+                                        gridState = pageGridState,
                                         metrics = scrollbarMetrics,
+                                        timelineSectionAnchors = timelineSectionAnchors,
+                                        locale = locale,
+                                        isListScrolling = pageGridState.isScrollInProgress,
                                         modifier = Modifier
                                             .align(Alignment.CenterEnd)
                                             .padding(vertical = 6.dp, horizontal = 4.dp)
@@ -797,38 +922,210 @@ internal fun GalleryScreen(
 
 @Composable
 private fun GalleryGridScrollbar(
+    gridState: LazyGridState,
     metrics: GridScrollbarMetrics?,
+    timelineSectionAnchors: List<GridTimelineSectionAnchor>,
+    locale: Locale,
+    isListScrolling: Boolean,
     modifier: Modifier = Modifier
 ) {
     if (metrics == null) return
 
-    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
-    val thumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f)
+    val layoutInfo = gridState.layoutInfo
+    val totalItemsCount = layoutInfo.totalItemsCount
+    if (totalItemsCount <= 0) return
 
-    Canvas(
+    val defaultIndex = layoutInfo.visibleItemsInfo
+        .minOfOrNull { item -> item.index }
+        ?: 0
+    val scope = rememberCoroutineScope()
+
+    var isScrubbing by remember(gridState) { mutableStateOf(false) }
+    var scrubFraction by remember(gridState) { mutableFloatStateOf(0f) }
+    var lastRequestedIndex by remember(gridState) { mutableIntStateOf(-1) }
+
+    val activeThumbOffsetFraction = if (isScrubbing) {
+        scrubFraction
+    } else {
+        metrics.thumbOffsetFraction
+    }
+
+    val activeItemIndex = if (isScrubbing) {
+        gridIndexForScrollbarFraction(scrubFraction, totalItemsCount)
+    } else {
+        defaultIndex
+    }
+
+    val monthYearLabel = remember(activeItemIndex, timelineSectionAnchors, locale) {
+        findTimelineDayForGridIndex(
+            itemIndex = activeItemIndex,
+            timelineSectionAnchors = timelineSectionAnchors
+        )?.let { day ->
+            formatTimelineMonthYearLabel(
+                day = day,
+                locale = locale
+            )
+        }
+    }
+    val yearMarkers = remember(timelineSectionAnchors, totalItemsCount) {
+        calculateTimelineYearMarkers(
+            timelineSectionAnchors = timelineSectionAnchors,
+            totalItemsCount = totalItemsCount
+        )
+    }
+
+    fun updateScrubFraction(rawFraction: Float) {
+        val clampedFraction = rawFraction.coerceIn(0f, 1f)
+        scrubFraction = clampedFraction
+
+        val targetIndex = gridIndexForScrollbarFraction(
+            fraction = clampedFraction,
+            totalItemsCount = totalItemsCount
+        )
+        if (targetIndex == lastRequestedIndex) return
+
+        lastRequestedIndex = targetIndex
+        scope.launch {
+            gridState.scrollToItem(targetIndex)
+        }
+    }
+
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxHeight(0.92f)
-            .width(4.dp)
+            .width(108.dp)
     ) {
-        if (size.height <= 0f || size.width <= 0f) return@Canvas
+        val density = LocalDensity.current
+        val trackHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+        val thumbHeightPx = (trackHeightPx * metrics.thumbHeightFraction).coerceIn(0f, trackHeightPx)
+        val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
+        val thumbTopPx = (activeThumbOffsetFraction * maxThumbOffsetPx).coerceIn(0f, maxThumbOffsetPx)
+        val thumbCenterPx = thumbTopPx + thumbHeightPx / 2f
+        val bubbleHeightPx = with(density) { 32.dp.toPx() }
+        val bubbleTopPx = (thumbCenterPx - bubbleHeightPx / 2f)
+            .coerceIn(0f, (trackHeightPx - bubbleHeightPx).coerceAtLeast(0f))
+        val markerHeightPx = with(density) { 16.dp.toPx() }
 
-        val cornerRadius = CornerRadius(x = size.width / 2f, y = size.width / 2f)
-        drawRoundRect(
-            color = trackColor,
-            size = size,
-            cornerRadius = cornerRadius
-        )
+        val isActive = isScrubbing || isListScrolling
+        val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isActive) 0.2f else 0.11f)
+        val thumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isActive) 0.74f else 0.52f)
+        val markerDotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
 
-        val thumbHeight = (size.height * metrics.thumbHeightFraction).coerceIn(0f, size.height)
-        val maxThumbOffset = (size.height - thumbHeight).coerceAtLeast(0f)
-        val thumbTop = (metrics.thumbOffsetFraction * maxThumbOffset).coerceIn(0f, maxThumbOffset)
+        if (isScrubbing) {
+            yearMarkers.forEach { marker ->
+                val markerCenterPx = marker.offsetFraction * trackHeightPx
+                val markerOffsetY = (markerCenterPx - markerHeightPx / 2f)
+                    .coerceIn(0f, (trackHeightPx - markerHeightPx).coerceAtLeast(0f))
+                    .roundToInt()
 
-        drawRoundRect(
-            color = thumbColor,
-            topLeft = Offset(x = 0f, y = thumbTop),
-            size = Size(width = size.width, height = thumbHeight),
-            cornerRadius = cornerRadius
-        )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset { IntOffset(x = 0, y = markerOffsetY) }
+                ) {
+                    Canvas(modifier = Modifier.width(4.dp).height(4.dp)) {
+                        drawCircle(
+                            color = markerDotColor,
+                            radius = size.minDimension / 2f
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = marker.year.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        if (isScrubbing && !monthYearLabel.isNullOrEmpty()) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
+                shape = MaterialTheme.shapes.small,
+                tonalElevation = 3.dp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset {
+                        IntOffset(
+                            x = -with(density) { 34.dp.roundToPx() },
+                            y = bubbleTopPx.roundToInt()
+                        )
+                    }
+                    .testTag(GALLERY_SCROLLBAR_HINT_TAG)
+            ) {
+                Text(
+                    text = monthYearLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(28.dp)
+                .pointerInput(totalItemsCount) {
+                    detectTapGestures { tapOffset ->
+                        isScrubbing = true
+                        val fraction = tapOffset.y / size.height.toFloat().coerceAtLeast(1f)
+                        updateScrubFraction(fraction)
+                        isScrubbing = false
+                        lastRequestedIndex = -1
+                    }
+                }
+                .pointerInput(totalItemsCount) {
+                    detectDragGestures(
+                        onDragStart = { dragStart ->
+                            isScrubbing = true
+                            val fraction = dragStart.y / size.height.toFloat().coerceAtLeast(1f)
+                            updateScrubFraction(fraction)
+                        },
+                        onDragEnd = {
+                            isScrubbing = false
+                            lastRequestedIndex = -1
+                        },
+                        onDragCancel = {
+                            isScrubbing = false
+                            lastRequestedIndex = -1
+                        }
+                    ) { change, _ ->
+                        change.consume()
+                        val fraction = change.position.y / size.height.toFloat().coerceAtLeast(1f)
+                        updateScrubFraction(fraction)
+                    }
+                }
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxHeight()
+                    .width(4.dp)
+            ) {
+                if (size.height <= 0f || size.width <= 0f) return@Canvas
+
+                val cornerRadius = CornerRadius(x = size.width / 2f, y = size.width / 2f)
+                drawRoundRect(
+                    color = trackColor,
+                    size = size,
+                    cornerRadius = cornerRadius
+                )
+
+                val thumbHeight = (size.height * metrics.thumbHeightFraction).coerceIn(0f, size.height)
+                val maxThumbOffset = (size.height - thumbHeight).coerceAtLeast(0f)
+                val thumbTop = (activeThumbOffsetFraction * maxThumbOffset).coerceIn(0f, maxThumbOffset)
+
+                drawRoundRect(
+                    color = thumbColor,
+                    topLeft = Offset(x = 0f, y = thumbTop),
+                    size = Size(width = size.width, height = thumbHeight),
+                    cornerRadius = cornerRadius
+                )
+            }
+        }
     }
 }
 
