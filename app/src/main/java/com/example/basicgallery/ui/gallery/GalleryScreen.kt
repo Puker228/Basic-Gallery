@@ -75,6 +75,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.geometry.CornerRadius
@@ -127,12 +129,27 @@ internal const val GALLERY_TOP_APP_BAR_TAG = "gallery_top_app_bar"
 internal const val GALLERY_TAB_ROW_TAG = "gallery_tab_row"
 internal const val GALLERY_TAB_PHOTOS_TAG = "gallery_tab_photos"
 internal const val GALLERY_TAB_TRASH_TAG = "gallery_tab_trash"
+internal const val GALLERY_CONTENT_PAGER_TAG = "gallery_content_pager"
 internal const val GALLERY_GRID_TAG = "gallery_grid"
 internal const val GALLERY_SCROLLBAR_TAG = "gallery_scrollbar"
 
 internal enum class GalleryTab {
     PHOTOS,
     TRASH
+}
+
+private val GalleryTab.pageIndex: Int
+    get() = when (this) {
+        GalleryTab.PHOTOS -> 0
+        GalleryTab.TRASH -> 1
+    }
+
+private fun tabForPage(pageIndex: Int): GalleryTab {
+    return if (pageIndex == GalleryTab.TRASH.pageIndex) {
+        GalleryTab.TRASH
+    } else {
+        GalleryTab.PHOTOS
+    }
 }
 
 private data class PendingMediaRequest(
@@ -215,11 +232,6 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var pendingMediaRequest by remember { mutableStateOf<PendingMediaRequest?>(null) }
     val photosGridState = rememberLazyGridState()
     val trashGridState = rememberLazyGridState()
-    val currentGridState = if (currentTab == GalleryTab.PHOTOS) {
-        photosGridState
-    } else {
-        trashGridState
-    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -399,9 +411,10 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     uiState = uiState,
                     imageLoader = mediaImageLoader,
                     currentTab = currentTab,
-                    gridState = currentGridState,
+                    photosGridState = photosGridState,
+                    trashGridState = trashGridState,
                     onTabSelected = { tab ->
-                        if (currentTab != tab) {
+                        if (currentTabName != tab.name) {
                             currentTabName = tab.name
                             viewModel.clearSelection()
                         }
@@ -466,7 +479,8 @@ internal fun GalleryScreen(
     uiState: GalleryUiState,
     imageLoader: ImageLoader,
     currentTab: GalleryTab,
-    gridState: LazyGridState,
+    photosGridState: LazyGridState,
+    trashGridState: LazyGridState,
     onTabSelected: (GalleryTab) -> Unit,
     onPhotoClick: (PhotoItem) -> Unit,
     onPhotoLongClick: (PhotoItem) -> Unit,
@@ -490,17 +504,10 @@ internal fun GalleryScreen(
     val currentPhotos = if (isTrashTab) uiState.trashPhotos else uiState.photos
     val currentPhotoCount = if (isTrashTab) uiState.trashPhotoCount else uiState.photoCount
     val currentVideoCount = if (isTrashTab) uiState.trashVideoCount else uiState.videoCount
+    val currentGridState = if (isTrashTab) trashGridState else photosGridState
 
     val todayLabel = stringResource(id = R.string.gallery_date_today)
     val yesterdayLabel = stringResource(id = R.string.gallery_date_yesterday)
-    val photoSections = remember(currentPhotos, locale, todayLabel, yesterdayLabel) {
-        groupPhotosByDay(
-            photos = currentPhotos,
-            todayLabel = todayLabel,
-            yesterdayLabel = yesterdayLabel,
-            locale = locale
-        )
-    }
     val density = LocalDensity.current
     var pullDistancePx by remember { mutableFloatStateOf(0f) }
     val revealDistancePx = with(density) { 72.dp.toPx() }
@@ -511,24 +518,28 @@ internal fun GalleryScreen(
         currentPhotoCount,
         currentVideoCount
     )
-    val emptyStateText = if (isTrashTab) {
-        stringResource(id = R.string.trash_empty_state)
-    } else {
-        stringResource(id = R.string.gallery_empty_state)
-    }
-    val scrollbarMetrics by remember(gridState) {
-        derivedStateOf {
-            val layoutInfo = gridState.layoutInfo
-            val firstVisibleIndex = layoutInfo.visibleItemsInfo.minOfOrNull { item -> item.index }
-                ?: return@derivedStateOf null
-            calculateGridScrollbarMetrics(
-                totalItemsCount = layoutInfo.totalItemsCount,
-                firstVisibleItemIndex = firstVisibleIndex,
-                visibleItemsCount = layoutInfo.visibleItemsInfo.size
-            )
+    val pagerState = rememberPagerState(
+        initialPage = currentTab.pageIndex,
+        pageCount = { GalleryTab.entries.size }
+    )
+    val latestCurrentTab by rememberUpdatedState(currentTab)
+    val latestOnTabSelected by rememberUpdatedState(onTabSelected)
+
+    LaunchedEffect(currentTab) {
+        val targetPage = currentTab.pageIndex
+        if (pagerState.currentPage != targetPage) {
+            pagerState.animateScrollToPage(targetPage)
         }
     }
-    val showScrollbar = gridState.isScrollInProgress && scrollbarMetrics != null
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }
+            .collect { page ->
+                val tab = tabForPage(page)
+                if (tab != latestCurrentTab) {
+                    latestOnTabSelected(tab)
+                }
+            }
+    }
 
     val pullToRevealConnection = remember(maxRevealDistancePx) {
         object : NestedScrollConnection {
@@ -558,8 +569,8 @@ internal fun GalleryScreen(
     LaunchedEffect(currentTab) {
         pullDistancePx = 0f
     }
-    LaunchedEffect(gridState.isScrollInProgress) {
-        if (!gridState.isScrollInProgress && pullDistancePx > 0f) {
+    LaunchedEffect(currentGridState.isScrollInProgress) {
+        if (!currentGridState.isScrollInProgress && pullDistancePx > 0f) {
             pullDistancePx = 0f
         }
     }
@@ -632,81 +643,124 @@ internal fun GalleryScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when {
-                uiState.isLoading && currentPhotos.isEmpty() -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-
-                uiState.errorMessage != null && currentPhotos.isEmpty() -> {
-                    ErrorState(
-                        message = uiState.errorMessage,
-                        onRetry = onRetry,
-                        modifier = Modifier.align(Alignment.Center)
+            HorizontalPager(
+                state = pagerState,
+                userScrollEnabled = !uiState.isSelectionMode,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag(GALLERY_CONTENT_PAGER_TAG)
+            ) { page ->
+                val pageTab = tabForPage(page)
+                val isTrashPage = pageTab == GalleryTab.TRASH
+                val pagePhotos = if (isTrashPage) uiState.trashPhotos else uiState.photos
+                val pageGridState = if (isTrashPage) trashGridState else photosGridState
+                val pagePhotoSections = remember(pagePhotos, locale, todayLabel, yesterdayLabel) {
+                    groupPhotosByDay(
+                        photos = pagePhotos,
+                        todayLabel = todayLabel,
+                        yesterdayLabel = yesterdayLabel,
+                        locale = locale
                     )
                 }
-
-                currentPhotos.isEmpty() -> {
-                    Text(
-                        text = emptyStateText,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                val emptyStateText = if (isTrashPage) {
+                    stringResource(id = R.string.trash_empty_state)
+                } else {
+                    stringResource(id = R.string.gallery_empty_state)
                 }
 
-                else -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            state = gridState,
-                            contentPadding = PaddingValues(2.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .testTag(GALLERY_GRID_TAG)
-                        ) {
-                            photoSections.forEach { section ->
-                                item(
-                                    key = "header_${section.day.toEpochDay()}",
-                                    span = { GridItemSpan(maxLineSpan) },
-                                    contentType = "day_header"
+                val scrollbarMetrics by remember(pageGridState) {
+                    derivedStateOf {
+                        val layoutInfo = pageGridState.layoutInfo
+                        val firstVisibleIndex = layoutInfo.visibleItemsInfo
+                            .minOfOrNull { item -> item.index }
+                            ?: return@derivedStateOf null
+                        calculateGridScrollbarMetrics(
+                            totalItemsCount = layoutInfo.totalItemsCount,
+                            firstVisibleItemIndex = firstVisibleIndex,
+                            visibleItemsCount = layoutInfo.visibleItemsInfo.size
+                        )
+                    }
+                }
+                val showScrollbar = pageGridState.isScrollInProgress && scrollbarMetrics != null
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when {
+                        uiState.isLoading && pagePhotos.isEmpty() -> {
+                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        }
+
+                        uiState.errorMessage != null && pagePhotos.isEmpty() -> {
+                            ErrorState(
+                                message = uiState.errorMessage,
+                                onRetry = onRetry,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
+
+                        pagePhotos.isEmpty() -> {
+                            Text(
+                                text = emptyStateText,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
+
+                        else -> {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(3),
+                                    state = pageGridState,
+                                    contentPadding = PaddingValues(2.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .testTag(GALLERY_GRID_TAG)
                                 ) {
-                                    DaySectionHeader(
-                                        label = section.label,
-                                        showSelectAll = !isTrashTab,
-                                        isSelectAllEnabled = section.photos.any { photo ->
-                                            photo.id !in uiState.selectedPhotoIds
-                                        },
-                                        onSelectAll = {
-                                            onSelectPhotos(section.photos.map { photo -> photo.id })
+                                    pagePhotoSections.forEach { section ->
+                                        item(
+                                            key = "header_${section.day.toEpochDay()}",
+                                            span = { GridItemSpan(maxLineSpan) },
+                                            contentType = "day_header"
+                                        ) {
+                                            DaySectionHeader(
+                                                label = section.label,
+                                                showSelectAll = !isTrashPage,
+                                                isSelectAllEnabled = section.photos.any { photo ->
+                                                    photo.id !in uiState.selectedPhotoIds
+                                                },
+                                                onSelectAll = {
+                                                    onSelectPhotos(section.photos.map { photo -> photo.id })
+                                                }
+                                            )
                                         }
-                                    )
+
+                                        items(
+                                            items = section.photos,
+                                            key = { it.id },
+                                            contentType = { "photo" }
+                                        ) { photo ->
+                                            PhotoGridItem(
+                                                photo = photo,
+                                                imageLoader = imageLoader,
+                                                isSelected = photo.id in uiState.selectedPhotoIds,
+                                                onClick = { onPhotoClick(photo) },
+                                                onLongClick = { onPhotoLongClick(photo) }
+                                            )
+                                        }
+                                    }
                                 }
 
-                                items(
-                                    items = section.photos,
-                                    key = { it.id },
-                                    contentType = { "photo" }
-                                ) { photo ->
-                                    PhotoGridItem(
-                                        photo = photo,
-                                        imageLoader = imageLoader,
-                                        isSelected = photo.id in uiState.selectedPhotoIds,
-                                        onClick = { onPhotoClick(photo) },
-                                        onLongClick = { onPhotoLongClick(photo) }
+                                if (showScrollbar && scrollbarMetrics != null) {
+                                    GalleryGridScrollbar(
+                                        metrics = scrollbarMetrics,
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .padding(vertical = 6.dp, horizontal = 4.dp)
+                                            .testTag(GALLERY_SCROLLBAR_TAG)
                                     )
                                 }
                             }
-                        }
-
-                        if (showScrollbar && scrollbarMetrics != null) {
-                            GalleryGridScrollbar(
-                                metrics = scrollbarMetrics,
-                                modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .padding(vertical = 6.dp, horizontal = 4.dp)
-                                    .testTag(GALLERY_SCROLLBAR_TAG)
-                            )
                         }
                     }
                 }

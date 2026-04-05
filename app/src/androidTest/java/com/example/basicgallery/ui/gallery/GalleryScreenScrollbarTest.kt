@@ -74,10 +74,11 @@ class GalleryScreenScrollbarTest {
             val imageLoader = remember(context) {
                 ImageLoader.Builder(context).build()
             }
-            val gridState = rememberLazyGridState()
+            val photosGridState = rememberLazyGridState()
+            val trashGridState = rememberLazyGridState()
             val scope = rememberCoroutineScope()
             SideEffect {
-                onStateReady(gridState, scope)
+                onStateReady(photosGridState, scope)
             }
 
             BasicGalleryTheme {
@@ -85,7 +86,8 @@ class GalleryScreenScrollbarTest {
                     uiState = uiState,
                     imageLoader = imageLoader,
                     currentTab = currentTab,
-                    gridState = gridState,
+                    photosGridState = photosGridState,
+                    trashGridState = trashGridState,
                     onTabSelected = { currentTab = it },
                     onPhotoClick = {},
                     onPhotoLongClick = {},

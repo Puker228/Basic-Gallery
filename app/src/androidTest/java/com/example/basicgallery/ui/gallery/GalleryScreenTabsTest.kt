@@ -18,6 +18,9 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import coil.ImageLoader
 import com.example.basicgallery.R
@@ -68,6 +71,65 @@ class GalleryScreenTabsTest {
         ).assertCountEquals(2)
     }
 
+    @Test
+    fun swipe_switchesBetweenPhotosAndTrash() {
+        setGalleryContent()
+
+        val deleteAllLabel = composeRule.activity.getString(R.string.delete_all)
+
+        composeRule.onNodeWithTag(GALLERY_CONTENT_PAGER_TAG).performTouchInput { swipeLeft() }
+
+        composeRule.onNodeWithTag(GALLERY_TAB_TRASH_TAG).assertIsSelected()
+        composeRule.onNodeWithText(deleteAllLabel).assertExists()
+
+        composeRule.onNodeWithTag(GALLERY_CONTENT_PAGER_TAG).performTouchInput { swipeRight() }
+
+        composeRule.onNodeWithTag(GALLERY_TAB_PHOTOS_TAG).assertIsSelected()
+        composeRule.onNodeWithText(deleteAllLabel).assertDoesNotExist()
+    }
+
+    @Test
+    fun swipe_backFromTrash_updatesIndicator_whenTabCallbackUsesDerivedCurrentTab() {
+        composeRule.setContent {
+            var currentTabName by remember { mutableStateOf(GalleryTab.PHOTOS.name) }
+            val currentTab = GalleryTab.valueOf(currentTabName)
+            val context = LocalContext.current
+            val imageLoader = remember(context) {
+                ImageLoader.Builder(context).build()
+            }
+
+            BasicGalleryTheme {
+                GalleryScreen(
+                    uiState = GalleryUiState(),
+                    imageLoader = imageLoader,
+                    currentTab = currentTab,
+                    photosGridState = rememberLazyGridState(),
+                    trashGridState = rememberLazyGridState(),
+                    onTabSelected = { tab ->
+                        if (currentTab != tab) {
+                            currentTabName = tab.name
+                        }
+                    },
+                    onPhotoClick = {},
+                    onPhotoLongClick = {},
+                    onSelectPhotos = {},
+                    onDeleteSelected = {},
+                    onRestoreSelected = {},
+                    onDeleteSelectedFromTrash = {},
+                    onDeleteAllFromTrash = {},
+                    onClearSelection = {},
+                    onRetry = {}
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(GALLERY_CONTENT_PAGER_TAG).performTouchInput { swipeLeft() }
+        composeRule.onNodeWithTag(GALLERY_TAB_TRASH_TAG).assertIsSelected()
+
+        composeRule.onNodeWithTag(GALLERY_CONTENT_PAGER_TAG).performTouchInput { swipeRight() }
+        composeRule.onNodeWithTag(GALLERY_TAB_PHOTOS_TAG).assertIsSelected()
+    }
+
     private fun setGalleryContent() {
         composeRule.setContent {
             var currentTab by remember { mutableStateOf(GalleryTab.PHOTOS) }
@@ -81,7 +143,8 @@ class GalleryScreenTabsTest {
                     uiState = GalleryUiState(),
                     imageLoader = imageLoader,
                     currentTab = currentTab,
-                    gridState = rememberLazyGridState(),
+                    photosGridState = rememberLazyGridState(),
+                    trashGridState = rememberLazyGridState(),
                     onTabSelected = { currentTab = it },
                     onPhotoClick = {},
                     onPhotoLongClick = {},
