@@ -21,6 +21,10 @@ Current main-screen behavior (keep docs and code aligned when changing it):
 - Photos are grouped by date with localized labels (Today/Yesterday and local date format).
 - Pull-down reveal shows section media counters (`Фото: X • Видео: Y` / `Photos: X • Videos: Y`).
 - Media is shown in a 3-column grid (photos and videos).
+- Grid has an interactive timeline scrollbar on the right:
+  - User can drag/tap the scrollbar thumb to scrub through the timeline quickly.
+  - While dragging, year markers (dot + year) are shown.
+  - While dragging, a floating month/year label is shown near the thumb.
 - Video cells use the first frame as preview and show duration badge at bottom-right:
   - `MM:SS` for videos shorter than 1 hour.
   - `HH:MM:SS` for videos 1 hour or longer.
@@ -36,6 +40,7 @@ Current main-screen behavior (keep docs and code aligned when changing it):
   - Top bar shows video creation date/time.
   - Uses a simple inline player.
   - Bottom action: `Delete`.
+- Full-screen media viewer supports left/right swiping across all items in the current section (photos + videos).
 - Full-screen `Delete` behavior:
   - In `Фото/Photos`, `Delete` moves media to trash.
   - In `Корзина/Trash`, `Delete` permanently deletes media.
