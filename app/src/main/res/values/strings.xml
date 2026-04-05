@@ -19,6 +19,7 @@
     <string name="delete">Delete</string>
     <string name="delete_all">Delete all</string>
     <string name="select_all">Select all</string>
+    <string name="cancel_selection">Cancel selection</string>
     <string name="restore">Restore</string>
     <string name="actions">Actions</string>
     <string name="cancel">Cancel</string>
