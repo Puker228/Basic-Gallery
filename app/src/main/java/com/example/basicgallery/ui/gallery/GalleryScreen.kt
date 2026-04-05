@@ -22,6 +22,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -36,11 +37,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -65,6 +68,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -75,7 +79,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -124,6 +130,8 @@ internal const val GALLERY_TAB_ROW_TAG = "gallery_tab_row"
 internal const val GALLERY_TAB_PHOTOS_TAG = "gallery_tab_photos"
 internal const val GALLERY_TAB_TRASH_TAG = "gallery_tab_trash"
 internal const val GALLERY_CONTENT_PAGER_TAG = "gallery_content_pager"
+internal const val GALLERY_GRID_TAG = "gallery_grid"
+internal const val GALLERY_SCROLLBAR_TAG = "gallery_scrollbar"
 
 internal enum class GalleryTab {
     PHOTOS,
@@ -147,6 +155,34 @@ private fun tabForPage(pageIndex: Int): GalleryTab {
 private data class PendingMediaRequest(
     val closeViewerAfterSuccess: Boolean
 )
+
+internal data class GridScrollbarMetrics(
+    val thumbOffsetFraction: Float,
+    val thumbHeightFraction: Float
+)
+
+internal fun calculateGridScrollbarMetrics(
+    totalItemsCount: Int,
+    firstVisibleItemIndex: Int,
+    visibleItemsCount: Int,
+    minThumbHeightFraction: Float = 0.12f
+): GridScrollbarMetrics? {
+    if (totalItemsCount <= 0 || visibleItemsCount <= 0 || visibleItemsCount >= totalItemsCount) {
+        return null
+    }
+
+    val clampedMinFraction = minThumbHeightFraction.coerceIn(0f, 1f)
+    val thumbHeightFraction = (visibleItemsCount.toFloat() / totalItemsCount.toFloat())
+        .coerceIn(clampedMinFraction, 1f)
+    val maxFirstIndex = (totalItemsCount - visibleItemsCount).coerceAtLeast(1)
+    val thumbOffsetFraction = (firstVisibleItemIndex.toFloat() / maxFirstIndex.toFloat())
+        .coerceIn(0f, 1f)
+
+    return GridScrollbarMetrics(
+        thumbOffsetFraction = thumbOffsetFraction,
+        thumbHeightFraction = thumbHeightFraction
+    )
+}
 
 internal fun createFullscreenDeleteHandler(
     openedFromTrash: Boolean,
@@ -632,6 +668,21 @@ internal fun GalleryScreen(
                     stringResource(id = R.string.gallery_empty_state)
                 }
 
+                val scrollbarMetrics by remember(pageGridState) {
+                    derivedStateOf {
+                        val layoutInfo = pageGridState.layoutInfo
+                        val firstVisibleIndex = layoutInfo.visibleItemsInfo
+                            .minOfOrNull { item -> item.index }
+                            ?: return@derivedStateOf null
+                        calculateGridScrollbarMetrics(
+                            totalItemsCount = layoutInfo.totalItemsCount,
+                            firstVisibleItemIndex = firstVisibleIndex,
+                            visibleItemsCount = layoutInfo.visibleItemsInfo.size
+                        )
+                    }
+                }
+                val showScrollbar = pageGridState.isScrollInProgress && scrollbarMetrics != null
+
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
                         uiState.isLoading && pagePhotos.isEmpty() -> {
@@ -655,45 +706,59 @@ internal fun GalleryScreen(
                         }
 
                         else -> {
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(3),
-                                state = pageGridState,
-                                contentPadding = PaddingValues(2.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                pagePhotoSections.forEach { section ->
-                                    item(
-                                        key = "header_${section.day.toEpochDay()}",
-                                        span = { GridItemSpan(maxLineSpan) },
-                                        contentType = "day_header"
-                                    ) {
-                                        DaySectionHeader(
-                                            label = section.label,
-                                            showSelectAll = !isTrashPage,
-                                            isSelectAllEnabled = section.photos.any { photo ->
-                                                photo.id !in uiState.selectedPhotoIds
-                                            },
-                                            onSelectAll = {
-                                                onSelectPhotos(section.photos.map { photo -> photo.id })
-                                            }
-                                        )
-                                    }
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(3),
+                                    state = pageGridState,
+                                    contentPadding = PaddingValues(2.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .testTag(GALLERY_GRID_TAG)
+                                ) {
+                                    pagePhotoSections.forEach { section ->
+                                        item(
+                                            key = "header_${section.day.toEpochDay()}",
+                                            span = { GridItemSpan(maxLineSpan) },
+                                            contentType = "day_header"
+                                        ) {
+                                            DaySectionHeader(
+                                                label = section.label,
+                                                showSelectAll = !isTrashPage,
+                                                isSelectAllEnabled = section.photos.any { photo ->
+                                                    photo.id !in uiState.selectedPhotoIds
+                                                },
+                                                onSelectAll = {
+                                                    onSelectPhotos(section.photos.map { photo -> photo.id })
+                                                }
+                                            )
+                                        }
 
-                                    items(
-                                        items = section.photos,
-                                        key = { it.id },
-                                        contentType = { "photo" }
-                                    ) { photo ->
-                                        PhotoGridItem(
-                                            photo = photo,
-                                            imageLoader = imageLoader,
-                                            isSelected = photo.id in uiState.selectedPhotoIds,
-                                            onClick = { onPhotoClick(photo) },
-                                            onLongClick = { onPhotoLongClick(photo) }
-                                        )
+                                        items(
+                                            items = section.photos,
+                                            key = { it.id },
+                                            contentType = { "photo" }
+                                        ) { photo ->
+                                            PhotoGridItem(
+                                                photo = photo,
+                                                imageLoader = imageLoader,
+                                                isSelected = photo.id in uiState.selectedPhotoIds,
+                                                onClick = { onPhotoClick(photo) },
+                                                onLongClick = { onPhotoLongClick(photo) }
+                                            )
+                                        }
                                     }
+                                }
+
+                                if (showScrollbar && scrollbarMetrics != null) {
+                                    GalleryGridScrollbar(
+                                        metrics = scrollbarMetrics,
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .padding(vertical = 6.dp, horizontal = 4.dp)
+                                            .testTag(GALLERY_SCROLLBAR_TAG)
+                                    )
                                 }
                             }
                         }
@@ -727,6 +792,43 @@ internal fun GalleryScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GalleryGridScrollbar(
+    metrics: GridScrollbarMetrics?,
+    modifier: Modifier = Modifier
+) {
+    if (metrics == null) return
+
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    val thumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f)
+
+    Canvas(
+        modifier = modifier
+            .fillMaxHeight(0.92f)
+            .width(4.dp)
+    ) {
+        if (size.height <= 0f || size.width <= 0f) return@Canvas
+
+        val cornerRadius = CornerRadius(x = size.width / 2f, y = size.width / 2f)
+        drawRoundRect(
+            color = trackColor,
+            size = size,
+            cornerRadius = cornerRadius
+        )
+
+        val thumbHeight = (size.height * metrics.thumbHeightFraction).coerceIn(0f, size.height)
+        val maxThumbOffset = (size.height - thumbHeight).coerceAtLeast(0f)
+        val thumbTop = (metrics.thumbOffsetFraction * maxThumbOffset).coerceIn(0f, maxThumbOffset)
+
+        drawRoundRect(
+            color = thumbColor,
+            topLeft = Offset(x = 0f, y = thumbTop),
+            size = Size(width = size.width, height = thumbHeight),
+            cornerRadius = cornerRadius
+        )
     }
 }
 
