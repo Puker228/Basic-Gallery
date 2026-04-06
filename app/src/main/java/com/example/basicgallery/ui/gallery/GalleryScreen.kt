@@ -1307,8 +1307,8 @@ private fun GalleryBottomActionBar(
                     pressedElevation = 0.dp,
                     disabledElevation = 0.dp
                 ),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 26.dp, vertical = 10.dp)
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 72.dp, vertical = 12.dp)
             ) {
                 Text(text = label)
             }
@@ -1423,7 +1423,7 @@ private fun DaySectionHeader(
                     containerColor = SelectionActionBackground,
                     contentColor = SelectionActionTextColor
                 ),
-                shape = RoundedCornerShape(12.dp),
+                shape = CircleShape,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
