@@ -28,9 +28,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,8 +71,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -101,6 +101,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -111,6 +112,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -151,10 +156,16 @@ internal const val GALLERY_GRID_TAG = "gallery_grid"
 internal const val GALLERY_SCROLLBAR_TAG = "gallery_scrollbar"
 internal const val GALLERY_SCROLLBAR_HINT_TAG = "gallery_scrollbar_hint"
 internal const val GALLERY_PULL_REVEAL_PANEL_TAG = "gallery_pull_reveal_panel"
+internal const val FULLSCREEN_TOP_APP_BAR_TAG = "fullscreen_top_app_bar"
+internal const val FULLSCREEN_BOTTOM_BAR_TAG = "fullscreen_bottom_bar"
 
 private val SelectionCheckboxBlue = Color(0xFF0C84FF)
 private val SelectionActionBackground = Color(0xFFF5F5F5)
 private val SelectionActionTextColor = Color(0xFF333333)
+private val GalleryActiveTabColor = Color(0xFF0C84FF)
+private val GalleryInactiveTabColor = Color(0xFF333333)
+internal val GalleryTabTextColorArgbKey = SemanticsPropertyKey<Int>("galleryTabTextColorArgb")
+internal var SemanticsPropertyReceiver.galleryTabTextColorArgb by GalleryTabTextColorArgbKey
 
 internal enum class GalleryTab {
     PHOTOS,
@@ -760,29 +771,25 @@ internal fun GalleryScreen(
                     )
                 }
 
-                if (!uiState.isSelectionMode && isTrashTab) {
-                    Row(
-                        horizontalArrangement = Arrangement.End,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        TextButton(
-                            onClick = onDeleteAllFromTrash,
-                            enabled = uiState.trashPhotos.isNotEmpty()
-                        ) {
-                            Text(text = stringResource(id = R.string.delete_all))
-                        }
-                    }
-                }
             }
         },
         bottomBar = {
-            if (uiState.isSelectionMode && !isTrashTab) {
-                SelectionBottomDeleteBar(
-                    onDeleteSelected = onDeleteSelected,
-                    enabled = uiState.selectedCount > 0
-                )
+            when {
+                uiState.isSelectionMode && !isTrashTab -> {
+                    GalleryBottomActionBar(
+                        onAction = onDeleteSelected,
+                        enabled = uiState.selectedCount > 0,
+                        label = stringResource(id = R.string.delete)
+                    )
+                }
+
+                !uiState.isSelectionMode && isTrashTab -> {
+                    GalleryBottomActionBar(
+                        onAction = onDeleteAllFromTrash,
+                        enabled = uiState.trashPhotos.isNotEmpty(),
+                        label = stringResource(id = R.string.delete)
+                    )
+                }
             }
         }
     ) { innerPadding ->
@@ -1196,19 +1203,34 @@ private fun GallerySectionTabs(
     )
     val selectedTabIndex = tabs.indexOfFirst { it.first == currentTab }.coerceAtLeast(0)
 
-    TabRow(
-        selectedTabIndex = selectedTabIndex,
-        modifier = modifier.testTag(GALLERY_TAB_ROW_TAG),
-        divider = {}
+    Row(
+        modifier = modifier
+            .testTag(GALLERY_TAB_ROW_TAG)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         tabs.forEachIndexed { index, (tab, label) ->
-            Tab(
-                modifier = Modifier.testTag(
-                    if (tab == GalleryTab.PHOTOS) GALLERY_TAB_PHOTOS_TAG else GALLERY_TAB_TRASH_TAG
-                ),
-                selected = selectedTabIndex == index,
-                onClick = { onTabSelected(tab) },
-                text = { Text(text = label) }
+            val isSelected = selectedTabIndex == index
+            val tabTextColor = if (isSelected) GalleryActiveTabColor else GalleryInactiveTabColor
+            Text(
+                text = label,
+                color = tabTextColor,
+                modifier = Modifier
+                    .testTag(
+                        if (tab == GalleryTab.PHOTOS) GALLERY_TAB_PHOTOS_TAG else GALLERY_TAB_TRASH_TAG
+                    )
+                    .semantics {
+                        galleryTabTextColorArgb = tabTextColor.toArgb()
+                    }
+                    .selectable(
+                        selected = isSelected,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Tab,
+                        onClick = { onTabSelected(tab) }
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             )
         }
     }
@@ -1253,9 +1275,10 @@ private fun TrashSelectionPopupMenu(
 }
 
 @Composable
-private fun SelectionBottomDeleteBar(
-    onDeleteSelected: () -> Unit,
-    enabled: Boolean
+private fun GalleryBottomActionBar(
+    onAction: () -> Unit,
+    enabled: Boolean,
+    label: String
 ) {
     Surface(
         color = Color.White,
@@ -1269,7 +1292,7 @@ private fun SelectionBottomDeleteBar(
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Button(
-                onClick = onDeleteSelected,
+                onClick = onAction,
                 enabled = enabled,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = SelectionActionBackground,
@@ -1283,7 +1306,7 @@ private fun SelectionBottomDeleteBar(
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 26.dp, vertical = 10.dp)
             ) {
-                Text(text = stringResource(id = R.string.delete))
+                Text(text = label)
             }
         }
     }
@@ -1562,50 +1585,61 @@ internal fun FullscreenMediaScreen(
     LaunchedEffect(currentMedia.id) {
         onCurrentMediaChanged(currentMedia)
     }
+    var areBarsVisible by rememberSaveable { mutableStateOf(true) }
+    val toggleBarsVisibility = {
+        areBarsVisible = !areBarsVisible
+    }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(text = dateTimeLabel) },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text(text = stringResource(id = R.string.back))
+            if (areBarsVisible) {
+                TopAppBar(
+                    modifier = Modifier.testTag(FULLSCREEN_TOP_APP_BAR_TAG),
+                    title = { Text(text = dateTimeLabel) },
+                    navigationIcon = {
+                        TextButton(onClick = onBack) {
+                            Text(text = stringResource(id = R.string.back))
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
-            Surface(
-                tonalElevation = 3.dp,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+            if (areBarsVisible) {
+                Surface(
+                    tonalElevation = 3.dp,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
+                        .navigationBarsPadding()
+                        .testTag(FULLSCREEN_BOTTOM_BAR_TAG)
                 ) {
-                    if (currentMedia.mediaType == MediaType.PHOTO) {
-                        if (onEditPhoto != null) {
-                            TextButton(onClick = { onEditPhoto(currentMedia) }) {
-                                Text(text = stringResource(id = R.string.edit))
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        if (currentMedia.mediaType == MediaType.PHOTO) {
+                            if (onEditPhoto != null) {
+                                TextButton(onClick = { onEditPhoto(currentMedia) }) {
+                                    Text(text = stringResource(id = R.string.edit))
+                                }
                             }
+                            TextButton(
+                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                enabled = onDelete != null
+                            ) {
+                                Text(text = stringResource(id = R.string.delete))
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                enabled = onDelete != null
+                            ) {
+                                Text(text = stringResource(id = R.string.delete))
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
                         }
-                        TextButton(
-                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                            enabled = onDelete != null
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(
-                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                            enabled = onDelete != null
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -1620,10 +1654,14 @@ internal fun FullscreenMediaScreen(
         ) { page ->
             val item = mediaItems[page]
             when (item.mediaType) {
-                MediaType.PHOTO -> FullscreenPhotoPage(photoUri = item.contentUri)
+                MediaType.PHOTO -> FullscreenPhotoPage(
+                    photoUri = item.contentUri,
+                    onTap = toggleBarsVisibility
+                )
                 MediaType.VIDEO -> FullscreenVideoPage(
                     videoUri = item.contentUri,
-                    isCurrentPage = page == pagerState.currentPage
+                    isCurrentPage = page == pagerState.currentPage,
+                    onTap = toggleBarsVisibility
                 )
             }
         }
@@ -1631,7 +1669,10 @@ internal fun FullscreenMediaScreen(
 }
 
 @Composable
-private fun FullscreenPhotoPage(photoUri: Uri) {
+private fun FullscreenPhotoPage(
+    photoUri: Uri,
+    onTap: () -> Unit
+) {
     val context = LocalContext.current
     val density = LocalDensity.current
     var scale by remember(photoUri) { mutableFloatStateOf(1f) }
@@ -1681,6 +1722,7 @@ private fun FullscreenPhotoPage(photoUri: Uri) {
                 .clipToBounds()
                 .pointerInput(photoUri, widthPx, heightPx) {
                     detectTapGestures(
+                        onTap = { onTap() },
                         onDoubleTap = { tapOffset ->
                             if (scale > 1f) {
                                 scale = 1f
@@ -1753,13 +1795,15 @@ private fun clampTranslation(
 @Composable
 private fun FullscreenVideoPage(
     videoUri: Uri,
-    isCurrentPage: Boolean
+    isCurrentPage: Boolean,
+    onTap: () -> Unit
 ) {
     var videoView: VideoView? by remember(videoUri) { mutableStateOf(null) }
 
     DisposableEffect(videoUri) {
         onDispose {
             videoView?.setOnPreparedListener(null)
+            videoView?.setOnClickListener(null)
             videoView?.stopPlayback()
             videoView = null
         }
@@ -1775,6 +1819,9 @@ private fun FullscreenVideoPage(
                     }
                     setMediaController(controller)
                     setVideoURI(videoUri)
+                    setOnClickListener {
+                        onTap()
+                    }
                     setOnPreparedListener { mediaPlayer ->
                         mediaPlayer.isLooping = false
                         if (isCurrentPage) {
