@@ -14,6 +14,8 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
 - Right-side interactive timeline scrollbar supports tap/drag scrubbing; while dragging it shows year markers and a floating `Month Year` hint near the thumb.
 - Video thumbnails use the first video frame and show duration at bottom-right (`MM:SS`, or `HH:MM:SS` for videos 1 hour+).
 - Full-screen media viewer supports left/right swiping across all items in the current section (photos + videos).
+- When a full-screen photo or video opens, top and bottom bars are visible by default.
+- In full-screen media view, single tap on photo/video toggles top and bottom bars (hide/show).
 - Full-screen photo view shows capture date/time.
 - In full-screen photo view:
   - In `Photos`, bottom actions are `Edit` and `Delete`.
