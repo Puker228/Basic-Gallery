@@ -41,6 +41,8 @@ Current main-screen behavior (keep docs and code aligned when changing it):
   - Uses a simple inline player.
   - Bottom action: `Delete`.
 - Full-screen media viewer supports left/right swiping across all items in the current section (photos + videos).
+- On open, full-screen photo/video shows top and bottom bars by default.
+- Single tap on full-screen photo/video toggles top and bottom bars (hide/show).
 - Full-screen `Delete` behavior:
   - In `Фото/Photos`, `Delete` moves media to trash.
   - In `Корзина/Trash`, `Delete` permanently deletes media.

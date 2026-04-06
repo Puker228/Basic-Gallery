@@ -148,6 +148,8 @@ internal const val GALLERY_CONTENT_PAGER_TAG = "gallery_content_pager"
 internal const val GALLERY_GRID_TAG = "gallery_grid"
 internal const val GALLERY_SCROLLBAR_TAG = "gallery_scrollbar"
 internal const val GALLERY_SCROLLBAR_HINT_TAG = "gallery_scrollbar_hint"
+internal const val FULLSCREEN_TOP_APP_BAR_TAG = "fullscreen_top_app_bar"
+internal const val FULLSCREEN_BOTTOM_BAR_TAG = "fullscreen_bottom_bar"
 
 private val SelectionCheckboxBlue = Color(0xFF0C84FF)
 private val SelectionActionBackground = Color(0xFFF5F5F5)
@@ -1539,50 +1541,61 @@ internal fun FullscreenMediaScreen(
     LaunchedEffect(currentMedia.id) {
         onCurrentMediaChanged(currentMedia)
     }
+    var areBarsVisible by rememberSaveable { mutableStateOf(true) }
+    val toggleBarsVisibility = {
+        areBarsVisible = !areBarsVisible
+    }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(text = dateTimeLabel) },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text(text = stringResource(id = R.string.back))
+            if (areBarsVisible) {
+                TopAppBar(
+                    modifier = Modifier.testTag(FULLSCREEN_TOP_APP_BAR_TAG),
+                    title = { Text(text = dateTimeLabel) },
+                    navigationIcon = {
+                        TextButton(onClick = onBack) {
+                            Text(text = stringResource(id = R.string.back))
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
-            Surface(
-                tonalElevation = 3.dp,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+            if (areBarsVisible) {
+                Surface(
+                    tonalElevation = 3.dp,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
+                        .navigationBarsPadding()
+                        .testTag(FULLSCREEN_BOTTOM_BAR_TAG)
                 ) {
-                    if (currentMedia.mediaType == MediaType.PHOTO) {
-                        if (onEditPhoto != null) {
-                            TextButton(onClick = { onEditPhoto(currentMedia) }) {
-                                Text(text = stringResource(id = R.string.edit))
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        if (currentMedia.mediaType == MediaType.PHOTO) {
+                            if (onEditPhoto != null) {
+                                TextButton(onClick = { onEditPhoto(currentMedia) }) {
+                                    Text(text = stringResource(id = R.string.edit))
+                                }
                             }
+                            TextButton(
+                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                enabled = onDelete != null
+                            ) {
+                                Text(text = stringResource(id = R.string.delete))
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                enabled = onDelete != null
+                            ) {
+                                Text(text = stringResource(id = R.string.delete))
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
                         }
-                        TextButton(
-                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                            enabled = onDelete != null
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(
-                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                            enabled = onDelete != null
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
-                        }
-                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -1597,10 +1610,14 @@ internal fun FullscreenMediaScreen(
         ) { page ->
             val item = mediaItems[page]
             when (item.mediaType) {
-                MediaType.PHOTO -> FullscreenPhotoPage(photoUri = item.contentUri)
+                MediaType.PHOTO -> FullscreenPhotoPage(
+                    photoUri = item.contentUri,
+                    onTap = toggleBarsVisibility
+                )
                 MediaType.VIDEO -> FullscreenVideoPage(
                     videoUri = item.contentUri,
-                    isCurrentPage = page == pagerState.currentPage
+                    isCurrentPage = page == pagerState.currentPage,
+                    onTap = toggleBarsVisibility
                 )
             }
         }
@@ -1608,7 +1625,10 @@ internal fun FullscreenMediaScreen(
 }
 
 @Composable
-private fun FullscreenPhotoPage(photoUri: Uri) {
+private fun FullscreenPhotoPage(
+    photoUri: Uri,
+    onTap: () -> Unit
+) {
     val context = LocalContext.current
     val density = LocalDensity.current
     var scale by remember(photoUri) { mutableFloatStateOf(1f) }
@@ -1658,6 +1678,7 @@ private fun FullscreenPhotoPage(photoUri: Uri) {
                 .clipToBounds()
                 .pointerInput(photoUri, widthPx, heightPx) {
                     detectTapGestures(
+                        onTap = { onTap() },
                         onDoubleTap = { tapOffset ->
                             if (scale > 1f) {
                                 scale = 1f
@@ -1730,13 +1751,15 @@ private fun clampTranslation(
 @Composable
 private fun FullscreenVideoPage(
     videoUri: Uri,
-    isCurrentPage: Boolean
+    isCurrentPage: Boolean,
+    onTap: () -> Unit
 ) {
     var videoView: VideoView? by remember(videoUri) { mutableStateOf(null) }
 
     DisposableEffect(videoUri) {
         onDispose {
             videoView?.setOnPreparedListener(null)
+            videoView?.setOnClickListener(null)
             videoView?.stopPlayback()
             videoView = null
         }
@@ -1752,6 +1775,9 @@ private fun FullscreenVideoPage(
                     }
                     setMediaController(controller)
                     setVideoURI(videoUri)
+                    setOnClickListener {
+                        onTap()
+                    }
                     setOnPreparedListener { mediaPlayer ->
                         mediaPlayer.isLooping = false
                         if (isCurrentPage) {
