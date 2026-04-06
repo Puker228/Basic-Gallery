@@ -22,7 +22,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -31,6 +34,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.transformable
@@ -1582,7 +1586,13 @@ internal fun FullscreenMediaScreen(
     }
     val currentMedia = mediaItems[pagerState.currentPage.coerceIn(0, mediaItems.lastIndex)]
     val dateTimeLabel = rememberMediaDateTimeLabel(dateTakenMillis = currentMedia.dateTakenMillis)
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var isCurrentPhotoZoomed by remember { mutableStateOf(false) }
     LaunchedEffect(currentMedia.id) {
+        dragOffsetY = 0f
+        isCurrentPhotoZoomed = false
         onCurrentMediaChanged(currentMedia)
     }
     var areBarsVisible by rememberSaveable { mutableStateOf(true) }
@@ -1590,79 +1600,148 @@ internal fun FullscreenMediaScreen(
         areBarsVisible = !areBarsVisible
     }
 
-    Scaffold(
-        topBar = {
-            if (areBarsVisible) {
-                TopAppBar(
-                    modifier = Modifier.testTag(FULLSCREEN_TOP_APP_BAR_TAG),
-                    title = { Text(text = dateTimeLabel) },
-                    navigationIcon = {
-                        TextButton(onClick = onBack) {
-                            Text(text = stringResource(id = R.string.back))
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim)
+    ) {
+        val viewportHeightPx = with(density) { maxHeight.toPx() }
+        val dismissThresholdPx = maxOf(
+            viewportHeightPx * 0.2f,
+            with(density) { 120.dp.toPx() }
+        )
+        val dragToDismissEnabled = currentMedia.mediaType != MediaType.PHOTO || !isCurrentPhotoZoomed
+        val dragToDismissModifier = if (dragToDismissEnabled) {
+            Modifier.pointerInput(currentMedia.id, dragToDismissEnabled, dismissThresholdPx) {
+                suspend fun animateBackToOrigin() {
+                    val startOffset = dragOffsetY
+                    if (startOffset <= 0f) {
+                        dragOffsetY = 0f
+                        return
+                    }
+                    animate(
+                        initialValue = startOffset,
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ) { value, _ ->
+                        dragOffsetY = value
+                    }
+                }
+
+                detectVerticalDragGestures(
+                    onVerticalDrag = { change, dragAmount ->
+                        if (dragAmount > 0f || dragOffsetY > 0f) {
+                            change.consume()
+                            dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                        }
+                    },
+                    onDragEnd = {
+                        if (dragOffsetY >= dismissThresholdPx) {
+                            dragOffsetY = 0f
+                            onBack()
+                        } else {
+                            coroutineScope.launch {
+                                animateBackToOrigin()
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            animateBackToOrigin()
                         }
                     }
                 )
             }
-        },
-        bottomBar = {
-            if (areBarsVisible) {
-                Surface(
-                    tonalElevation = 3.dp,
-                    modifier = Modifier
-                        .navigationBarsPadding()
-                        .testTag(FULLSCREEN_BOTTOM_BAR_TAG)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+        } else {
+            Modifier
+        }
+
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                if (areBarsVisible) {
+                    TopAppBar(
+                        modifier = Modifier.testTag(FULLSCREEN_TOP_APP_BAR_TAG),
+                        title = { Text(text = dateTimeLabel) },
+                        navigationIcon = {
+                            TextButton(onClick = onBack) {
+                                Text(text = stringResource(id = R.string.back))
+                            }
+                        }
+                    )
+                }
+            },
+            bottomBar = {
+                if (areBarsVisible) {
+                    Surface(
+                        tonalElevation = 3.dp,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
+                            .navigationBarsPadding()
+                            .testTag(FULLSCREEN_BOTTOM_BAR_TAG)
                     ) {
-                        if (currentMedia.mediaType == MediaType.PHOTO) {
-                            if (onEditPhoto != null) {
-                                TextButton(onClick = { onEditPhoto(currentMedia) }) {
-                                    Text(text = stringResource(id = R.string.edit))
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            if (currentMedia.mediaType == MediaType.PHOTO) {
+                                if (onEditPhoto != null) {
+                                    TextButton(onClick = { onEditPhoto(currentMedia) }) {
+                                        Text(text = stringResource(id = R.string.edit))
+                                    }
                                 }
+                                TextButton(
+                                    onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                    enabled = onDelete != null
+                                ) {
+                                    Text(text = stringResource(id = R.string.delete))
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                    enabled = onDelete != null
+                                ) {
+                                    Text(text = stringResource(id = R.string.delete))
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
                             }
-                            TextButton(
-                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                                enabled = onDelete != null
-                            ) {
-                                Text(text = stringResource(id = R.string.delete))
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.weight(1f))
-                            TextButton(
-                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                                enabled = onDelete != null
-                            ) {
-                                Text(text = stringResource(id = R.string.delete))
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
             }
-        }
-    ) { innerPadding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.scrim)
-        ) { page ->
-            val item = mediaItems[page]
-            when (item.mediaType) {
-                MediaType.PHOTO -> FullscreenPhotoPage(
-                    photoUri = item.contentUri,
-                    onTap = toggleBarsVisibility
-                )
-                MediaType.VIDEO -> FullscreenVideoPage(
-                    videoUri = item.contentUri,
-                    isCurrentPage = page == pagerState.currentPage,
-                    onTap = toggleBarsVisibility
-                )
+        ) { innerPadding ->
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .background(MaterialTheme.colorScheme.scrim)
+                    .then(dragToDismissModifier)
+                    .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+            ) { page ->
+                val item = mediaItems[page]
+                when (item.mediaType) {
+                    MediaType.PHOTO -> FullscreenPhotoPage(
+                        photoUri = item.contentUri,
+                        onTap = toggleBarsVisibility,
+                        onZoomStateChanged = { isZoomed ->
+                            if (page == pagerState.currentPage) {
+                                isCurrentPhotoZoomed = isZoomed
+                            }
+                        }
+                    )
+                    MediaType.VIDEO -> FullscreenVideoPage(
+                        videoUri = item.contentUri,
+                        isCurrentPage = page == pagerState.currentPage,
+                        onTap = toggleBarsVisibility
+                    )
+                }
             }
         }
     }
@@ -1671,13 +1750,24 @@ internal fun FullscreenMediaScreen(
 @Composable
 private fun FullscreenPhotoPage(
     photoUri: Uri,
-    onTap: () -> Unit
+    onTap: () -> Unit,
+    onZoomStateChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
     var scale by remember(photoUri) { mutableFloatStateOf(1f) }
     var translation by remember(photoUri) { mutableStateOf(Offset.Zero) }
     val doubleTapScale = 2.5f
+
+    val isZoomed = scale > 1f
+    LaunchedEffect(isZoomed) {
+        onZoomStateChanged(isZoomed)
+    }
+    DisposableEffect(photoUri) {
+        onDispose {
+            onZoomStateChanged(false)
+        }
+    }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
