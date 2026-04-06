@@ -26,9 +26,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,8 +69,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -99,6 +99,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -109,6 +110,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -152,6 +157,10 @@ internal const val GALLERY_SCROLLBAR_HINT_TAG = "gallery_scrollbar_hint"
 private val SelectionCheckboxBlue = Color(0xFF0C84FF)
 private val SelectionActionBackground = Color(0xFFF5F5F5)
 private val SelectionActionTextColor = Color(0xFF333333)
+private val GalleryActiveTabColor = Color(0xFF0C84FF)
+private val GalleryInactiveTabColor = Color(0xFF333333)
+internal val GalleryTabTextColorArgbKey = SemanticsPropertyKey<Int>("galleryTabTextColorArgb")
+internal var SemanticsPropertyReceiver.galleryTabTextColorArgb by GalleryTabTextColorArgbKey
 
 internal enum class GalleryTab {
     PHOTOS,
@@ -1173,19 +1182,34 @@ private fun GallerySectionTabs(
     )
     val selectedTabIndex = tabs.indexOfFirst { it.first == currentTab }.coerceAtLeast(0)
 
-    TabRow(
-        selectedTabIndex = selectedTabIndex,
-        modifier = modifier.testTag(GALLERY_TAB_ROW_TAG),
-        divider = {}
+    Row(
+        modifier = modifier
+            .testTag(GALLERY_TAB_ROW_TAG)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         tabs.forEachIndexed { index, (tab, label) ->
-            Tab(
-                modifier = Modifier.testTag(
-                    if (tab == GalleryTab.PHOTOS) GALLERY_TAB_PHOTOS_TAG else GALLERY_TAB_TRASH_TAG
-                ),
-                selected = selectedTabIndex == index,
-                onClick = { onTabSelected(tab) },
-                text = { Text(text = label) }
+            val isSelected = selectedTabIndex == index
+            val tabTextColor = if (isSelected) GalleryActiveTabColor else GalleryInactiveTabColor
+            Text(
+                text = label,
+                color = tabTextColor,
+                modifier = Modifier
+                    .testTag(
+                        if (tab == GalleryTab.PHOTOS) GALLERY_TAB_PHOTOS_TAG else GALLERY_TAB_TRASH_TAG
+                    )
+                    .semantics {
+                        galleryTabTextColorArgb = tabTextColor.toArgb()
+                    }
+                    .selectable(
+                        selected = isSelected,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Tab,
+                        onClick = { onTabSelected(tab) }
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             )
         }
     }

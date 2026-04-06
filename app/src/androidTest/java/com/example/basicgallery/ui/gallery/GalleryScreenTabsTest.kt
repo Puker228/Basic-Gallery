@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -63,6 +65,19 @@ class GalleryScreenTabsTest {
     }
 
     @Test
+    fun tabs_useRequestedColors_forActiveAndInactiveStates() {
+        setGalleryContent()
+
+        assertTabTextColor(tag = GALLERY_TAB_PHOTOS_TAG, expectedColorArgb = 0xFF0C84FF.toInt())
+        assertTabTextColor(tag = GALLERY_TAB_TRASH_TAG, expectedColorArgb = 0xFF333333.toInt())
+
+        composeRule.onNodeWithTag(GALLERY_TAB_TRASH_TAG).performClick()
+
+        assertTabTextColor(tag = GALLERY_TAB_TRASH_TAG, expectedColorArgb = 0xFF0C84FF.toInt())
+        assertTabTextColor(tag = GALLERY_TAB_PHOTOS_TAG, expectedColorArgb = 0xFF333333.toInt())
+    }
+
+    @Test
     fun photosTopBar_containsOnlyTabsNoExtraButtons() {
         setGalleryContent()
 
@@ -113,6 +128,7 @@ class GalleryScreenTabsTest {
                     onPhotoClick = {},
                     onPhotoLongClick = {},
                     onSelectPhotos = {},
+                    onDeselectPhotos = {},
                     onDeleteSelected = {},
                     onRestoreSelected = {},
                     onDeleteSelectedFromTrash = {},
@@ -149,6 +165,7 @@ class GalleryScreenTabsTest {
                     onPhotoClick = {},
                     onPhotoLongClick = {},
                     onSelectPhotos = {},
+                    onDeselectPhotos = {},
                     onDeleteSelected = {},
                     onRestoreSelected = {},
                     onDeleteSelectedFromTrash = {},
@@ -158,5 +175,11 @@ class GalleryScreenTabsTest {
                 )
             }
         }
+    }
+
+    private fun assertTabTextColor(tag: String, expectedColorArgb: Int) {
+        composeRule.onNodeWithTag(tag).assert(
+            SemanticsMatcher.expectValue(GalleryTabTextColorArgbKey, expectedColorArgb)
+        )
     }
 }
