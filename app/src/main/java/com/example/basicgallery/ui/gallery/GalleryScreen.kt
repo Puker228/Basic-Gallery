@@ -751,29 +751,25 @@ internal fun GalleryScreen(
                     )
                 }
 
-                if (!uiState.isSelectionMode && isTrashTab) {
-                    Row(
-                        horizontalArrangement = Arrangement.End,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        TextButton(
-                            onClick = onDeleteAllFromTrash,
-                            enabled = uiState.trashPhotos.isNotEmpty()
-                        ) {
-                            Text(text = stringResource(id = R.string.delete_all))
-                        }
-                    }
-                }
             }
         },
         bottomBar = {
-            if (uiState.isSelectionMode && !isTrashTab) {
-                SelectionBottomDeleteBar(
-                    onDeleteSelected = onDeleteSelected,
-                    enabled = uiState.selectedCount > 0
-                )
+            when {
+                uiState.isSelectionMode && !isTrashTab -> {
+                    GalleryBottomActionBar(
+                        onAction = onDeleteSelected,
+                        enabled = uiState.selectedCount > 0,
+                        label = stringResource(id = R.string.delete)
+                    )
+                }
+
+                !uiState.isSelectionMode && isTrashTab -> {
+                    GalleryBottomActionBar(
+                        onAction = onDeleteAllFromTrash,
+                        enabled = uiState.trashPhotos.isNotEmpty(),
+                        label = stringResource(id = R.string.delete)
+                    )
+                }
             }
         }
     ) { innerPadding ->
@@ -1230,9 +1226,10 @@ private fun TrashSelectionPopupMenu(
 }
 
 @Composable
-private fun SelectionBottomDeleteBar(
-    onDeleteSelected: () -> Unit,
-    enabled: Boolean
+private fun GalleryBottomActionBar(
+    onAction: () -> Unit,
+    enabled: Boolean,
+    label: String
 ) {
     Surface(
         color = Color.White,
@@ -1246,7 +1243,7 @@ private fun SelectionBottomDeleteBar(
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Button(
-                onClick = onDeleteSelected,
+                onClick = onAction,
                 enabled = enabled,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = SelectionActionBackground,
@@ -1260,7 +1257,7 @@ private fun SelectionBottomDeleteBar(
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 26.dp, vertical = 10.dp)
             ) {
-                Text(text = stringResource(id = R.string.delete))
+                Text(text = label)
             }
         }
     }

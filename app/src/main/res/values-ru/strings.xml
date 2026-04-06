@@ -16,7 +16,6 @@
     <string name="retry">Повторить</string>
     <string name="back">Назад</string>
     <string name="delete">Удалить</string>
-    <string name="delete_all">Удалить всё</string>
     <string name="select_all">Выбрать все</string>
     <string name="cancel_selection">Отменить выбор</string>
     <string name="restore">Восстановить</string>
