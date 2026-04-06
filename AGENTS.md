@@ -47,7 +47,7 @@ Current main-screen behavior (keep docs and code aligned when changing it):
 - In `Фото/Photos`, multi-select moves chosen photos to trash.
 - In `Фото/Photos`, each day header includes a right-aligned `Выбрать всё/Select all` action that selects all photos for that date.
 - Trash supports:
-  - `Delete all` action in top-right corner for all items in trash.
+  - Fixed bottom bar with centered `Delete` action for all items in trash.
   - In selection mode, top app bar `Actions` menu with `Restore` and `Delete`.
   - Restore via MediaStore untrash API and permanent delete via MediaStore delete API (Android 11+).
 

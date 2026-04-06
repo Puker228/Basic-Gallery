@@ -28,7 +28,7 @@ Basic Gallery is a single-module Android app that shows device photos and suppor
   - In `Trash`, `Delete` permanently removes media.
 - Photos section: multi-select with a centered top selected counter, top-left close (`X`) button, and a fixed bottom `Delete` action on a white bottom bar.
 - Trash section:
-  - Top-right `Delete all` action for all items currently in trash.
+  - Fixed bottom bar with centered `Delete` action for all items currently in trash.
   - In selection mode, top app bar `Actions` menu provides `Restore` and `Delete`.
 - Uses `MediaStore.createTrashRequest(..., false)` for restore and `MediaStore.createDeleteRequest(...)` for permanent delete on Android 11+.
 

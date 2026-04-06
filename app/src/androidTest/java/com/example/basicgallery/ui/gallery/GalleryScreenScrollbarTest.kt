@@ -70,6 +70,7 @@ class GalleryScreenScrollbarTest {
                     onPhotoClick = {},
                     onPhotoLongClick = {},
                     onSelectPhotos = {},
+                    onDeselectPhotos = {},
                     onDeleteSelected = {},
                     onRestoreSelected = {},
                     onDeleteSelectedFromTrash = {},
