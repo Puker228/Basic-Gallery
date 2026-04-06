@@ -22,12 +22,16 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.shape.CircleShape
@@ -1536,84 +1540,175 @@ internal fun FullscreenMediaScreen(
     }
     val currentMedia = mediaItems[pagerState.currentPage.coerceIn(0, mediaItems.lastIndex)]
     val dateTimeLabel = rememberMediaDateTimeLabel(dateTakenMillis = currentMedia.dateTakenMillis)
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var isCurrentPhotoZoomed by remember { mutableStateOf(false) }
+
     LaunchedEffect(currentMedia.id) {
+        dragOffsetY = 0f
+        isCurrentPhotoZoomed = false
         onCurrentMediaChanged(currentMedia)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(text = dateTimeLabel) },
-                navigationIcon = {
-                    TextButton(onClick = onBack) {
-                        Text(text = stringResource(id = R.string.back))
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim)
+    ) {
+        val viewportHeightPx = with(density) { maxHeight.toPx() }
+        val dismissThresholdPx = maxOf(
+            viewportHeightPx * 0.2f,
+            with(density) { 120.dp.toPx() }
+        )
+        val dragToDismissEnabled = currentMedia.mediaType != MediaType.PHOTO || !isCurrentPhotoZoomed
+        val dragToDismissModifier = if (dragToDismissEnabled) {
+            Modifier.pointerInput(currentMedia.id, dragToDismissEnabled, dismissThresholdPx) {
+                suspend fun animateBackToOrigin() {
+                    val startOffset = dragOffsetY
+                    if (startOffset <= 0f) {
+                        dragOffsetY = 0f
+                        return
+                    }
+                    animate(
+                        initialValue = startOffset,
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ) { value, _ ->
+                        dragOffsetY = value
                     }
                 }
-            )
-        },
-        bottomBar = {
-            Surface(
-                tonalElevation = 3.dp,
-                modifier = Modifier.navigationBarsPadding()
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                ) {
-                    if (currentMedia.mediaType == MediaType.PHOTO) {
-                        if (onEditPhoto != null) {
-                            TextButton(onClick = { onEditPhoto(currentMedia) }) {
-                                Text(text = stringResource(id = R.string.edit))
+
+                detectVerticalDragGestures(
+                    onVerticalDrag = { change, dragAmount ->
+                        if (dragAmount > 0f || dragOffsetY > 0f) {
+                            change.consume()
+                            dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                        }
+                    },
+                    onDragEnd = {
+                        if (dragOffsetY >= dismissThresholdPx) {
+                            dragOffsetY = 0f
+                            onBack()
+                        } else {
+                            coroutineScope.launch {
+                                animateBackToOrigin()
                             }
                         }
-                        TextButton(
-                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                            enabled = onDelete != null
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            animateBackToOrigin()
                         }
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(
-                            onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                            enabled = onDelete != null
-                        ) {
-                            Text(text = stringResource(id = R.string.delete))
+                    }
+                )
+            }
+        } else {
+            Modifier
+        }
+
+        Scaffold(
+            modifier = Modifier
+                .fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = { Text(text = dateTimeLabel) },
+                    navigationIcon = {
+                        TextButton(onClick = onBack) {
+                            Text(text = stringResource(id = R.string.back))
                         }
-                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                )
+            },
+            bottomBar = {
+                Surface(
+                    tonalElevation = 3.dp,
+                    modifier = Modifier.navigationBarsPadding()
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        if (currentMedia.mediaType == MediaType.PHOTO) {
+                            if (onEditPhoto != null) {
+                                TextButton(onClick = { onEditPhoto(currentMedia) }) {
+                                    Text(text = stringResource(id = R.string.edit))
+                                }
+                            }
+                            TextButton(
+                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                enabled = onDelete != null
+                            ) {
+                                Text(text = stringResource(id = R.string.delete))
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                enabled = onDelete != null
+                            ) {
+                                Text(text = stringResource(id = R.string.delete))
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }
-        }
-    ) { innerPadding ->
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.scrim)
-        ) { page ->
-            val item = mediaItems[page]
-            when (item.mediaType) {
-                MediaType.PHOTO -> FullscreenPhotoPage(photoUri = item.contentUri)
-                MediaType.VIDEO -> FullscreenVideoPage(
-                    videoUri = item.contentUri,
-                    isCurrentPage = page == pagerState.currentPage
-                )
+        ) { innerPadding ->
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .then(dragToDismissModifier)
+                    .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+            ) { page ->
+                val item = mediaItems[page]
+                when (item.mediaType) {
+                    MediaType.PHOTO -> FullscreenPhotoPage(
+                        photoUri = item.contentUri,
+                        onZoomStateChanged = { isZoomed ->
+                            if (page == pagerState.currentPage) {
+                                isCurrentPhotoZoomed = isZoomed
+                            }
+                        }
+                    )
+                    MediaType.VIDEO -> FullscreenVideoPage(
+                        videoUri = item.contentUri,
+                        isCurrentPage = page == pagerState.currentPage
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun FullscreenPhotoPage(photoUri: Uri) {
+private fun FullscreenPhotoPage(
+    photoUri: Uri,
+    onZoomStateChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val density = LocalDensity.current
     var scale by remember(photoUri) { mutableFloatStateOf(1f) }
     var translation by remember(photoUri) { mutableStateOf(Offset.Zero) }
     val doubleTapScale = 2.5f
+
+    val isZoomed = scale > 1f
+    LaunchedEffect(isZoomed) {
+        onZoomStateChanged(isZoomed)
+    }
+    DisposableEffect(photoUri) {
+        onDispose {
+            onZoomStateChanged(false)
+        }
+    }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
