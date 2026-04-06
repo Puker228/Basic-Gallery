@@ -24,15 +24,19 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,8 +75,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -103,6 +105,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -113,6 +116,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -152,10 +159,17 @@ internal const val GALLERY_CONTENT_PAGER_TAG = "gallery_content_pager"
 internal const val GALLERY_GRID_TAG = "gallery_grid"
 internal const val GALLERY_SCROLLBAR_TAG = "gallery_scrollbar"
 internal const val GALLERY_SCROLLBAR_HINT_TAG = "gallery_scrollbar_hint"
+internal const val GALLERY_PULL_REVEAL_PANEL_TAG = "gallery_pull_reveal_panel"
+internal const val FULLSCREEN_TOP_APP_BAR_TAG = "fullscreen_top_app_bar"
+internal const val FULLSCREEN_BOTTOM_BAR_TAG = "fullscreen_bottom_bar"
 
 private val SelectionCheckboxBlue = Color(0xFF0C84FF)
 private val SelectionActionBackground = Color(0xFFF5F5F5)
 private val SelectionActionTextColor = Color(0xFF333333)
+private val GalleryActiveTabColor = Color(0xFF0C84FF)
+private val GalleryInactiveTabColor = Color(0xFF333333)
+internal val GalleryTabTextColorArgbKey = SemanticsPropertyKey<Int>("galleryTabTextColorArgb")
+internal var SemanticsPropertyReceiver.galleryTabTextColorArgb by GalleryTabTextColorArgbKey
 
 internal enum class GalleryTab {
     PHOTOS,
@@ -650,7 +664,13 @@ internal fun GalleryScreen(
     var pullDistancePx by remember { mutableFloatStateOf(0f) }
     val revealDistancePx = with(density) { 72.dp.toPx() }
     val maxRevealDistancePx = with(density) { 140.dp.toPx() }
-    val revealProgress = (pullDistancePx / revealDistancePx).coerceIn(0f, 1f)
+    val targetRevealProgress = (pullDistancePx / revealDistancePx).coerceIn(0f, 1f)
+    val revealProgress by animateFloatAsState(
+        targetValue = targetRevealProgress,
+        animationSpec = tween(durationMillis = 180),
+        label = "pull_to_reveal_progress"
+    )
+    val revealPanelHeight = 56.dp * revealProgress
     val mediaCountText = stringResource(
         id = R.string.gallery_media_count,
         currentPhotoCount,
@@ -755,198 +775,208 @@ internal fun GalleryScreen(
                     )
                 }
 
-                if (!uiState.isSelectionMode && isTrashTab) {
-                    Row(
-                        horizontalArrangement = Arrangement.End,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        TextButton(
-                            onClick = onDeleteAllFromTrash,
-                            enabled = uiState.trashPhotos.isNotEmpty()
-                        ) {
-                            Text(text = stringResource(id = R.string.delete_all))
-                        }
-                    }
-                }
             }
         },
         bottomBar = {
-            if (uiState.isSelectionMode && !isTrashTab) {
-                SelectionBottomDeleteBar(
-                    onDeleteSelected = onDeleteSelected,
-                    enabled = uiState.selectedCount > 0
-                )
+            when {
+                uiState.isSelectionMode && !isTrashTab -> {
+                    GalleryBottomActionBar(
+                        onAction = onDeleteSelected,
+                        enabled = uiState.selectedCount > 0,
+                        label = stringResource(id = R.string.delete)
+                    )
+                }
+
+                !uiState.isSelectionMode && isTrashTab -> {
+                    GalleryBottomActionBar(
+                        onAction = onDeleteAllFromTrash,
+                        enabled = uiState.trashPhotos.isNotEmpty(),
+                        label = stringResource(id = R.string.delete)
+                    )
+                }
             }
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .nestedScroll(pullToRevealConnection)
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            HorizontalPager(
-                state = pagerState,
-                userScrollEnabled = !uiState.isSelectionMode,
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .testTag(GALLERY_CONTENT_PAGER_TAG)
-            ) { page ->
-                val pageTab = tabForPage(page)
-                val isTrashPage = pageTab == GalleryTab.TRASH
-                val pagePhotos = if (isTrashPage) uiState.trashPhotos else uiState.photos
-                val pageGridState = if (isTrashPage) trashGridState else photosGridState
-                val pagePhotoSections = remember(pagePhotos, locale, todayLabel, yesterdayLabel) {
-                    groupPhotosByDay(
-                        photos = pagePhotos,
-                        todayLabel = todayLabel,
-                        yesterdayLabel = yesterdayLabel,
-                        locale = locale
-                    )
-                }
-                val timelineSectionAnchors = remember(pagePhotoSections) {
-                    buildTimelineSectionAnchors(pagePhotoSections)
-                }
-                val emptyStateText = if (isTrashPage) {
-                    stringResource(id = R.string.trash_empty_state)
-                } else {
-                    stringResource(id = R.string.gallery_empty_state)
-                }
-
-                val scrollbarMetrics by remember(pageGridState) {
-                    derivedStateOf {
-                        val layoutInfo = pageGridState.layoutInfo
-                        val firstVisibleIndex = layoutInfo.visibleItemsInfo
-                            .minOfOrNull { item -> item.index }
-                            ?: return@derivedStateOf null
-                        calculateGridScrollbarMetrics(
-                            totalItemsCount = layoutInfo.totalItemsCount,
-                            firstVisibleItemIndex = firstVisibleIndex,
-                            visibleItemsCount = layoutInfo.visibleItemsInfo.size
+                    .fillMaxWidth()
+                    .height(revealPanelHeight)
+                    .clipToBounds(),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                if (revealProgress > 0f) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+                        shape = MaterialTheme.shapes.large,
+                        tonalElevation = 2.dp,
+                        modifier = Modifier
+                            .testTag(GALLERY_PULL_REVEAL_PANEL_TAG)
+                            .padding(top = 8.dp)
+                            .graphicsLayer { alpha = revealProgress }
+                    ) {
+                        Text(
+                            text = mediaCountText,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                         )
                     }
                 }
-                val showScrollbar = scrollbarMetrics != null
+            }
 
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when {
-                        uiState.isLoading && pagePhotos.isEmpty() -> {
-                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                        }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    userScrollEnabled = !uiState.isSelectionMode,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag(GALLERY_CONTENT_PAGER_TAG)
+                ) { page ->
+                    val pageTab = tabForPage(page)
+                    val isTrashPage = pageTab == GalleryTab.TRASH
+                    val pagePhotos = if (isTrashPage) uiState.trashPhotos else uiState.photos
+                    val pageGridState = if (isTrashPage) trashGridState else photosGridState
+                    val pagePhotoSections = remember(pagePhotos, locale, todayLabel, yesterdayLabel) {
+                        groupPhotosByDay(
+                            photos = pagePhotos,
+                            todayLabel = todayLabel,
+                            yesterdayLabel = yesterdayLabel,
+                            locale = locale
+                        )
+                    }
+                    val timelineSectionAnchors = remember(pagePhotoSections) {
+                        buildTimelineSectionAnchors(pagePhotoSections)
+                    }
+                    val emptyStateText = if (isTrashPage) {
+                        stringResource(id = R.string.trash_empty_state)
+                    } else {
+                        stringResource(id = R.string.gallery_empty_state)
+                    }
 
-                        uiState.errorMessage != null && pagePhotos.isEmpty() -> {
-                            ErrorState(
-                                message = uiState.errorMessage,
-                                onRetry = onRetry,
-                                modifier = Modifier.align(Alignment.Center)
+                    val scrollbarMetrics by remember(pageGridState) {
+                        derivedStateOf {
+                            val layoutInfo = pageGridState.layoutInfo
+                            val firstVisibleIndex = layoutInfo.visibleItemsInfo
+                                .minOfOrNull { item -> item.index }
+                                ?: return@derivedStateOf null
+                            calculateGridScrollbarMetrics(
+                                totalItemsCount = layoutInfo.totalItemsCount,
+                                firstVisibleItemIndex = firstVisibleIndex,
+                                visibleItemsCount = layoutInfo.visibleItemsInfo.size
                             )
                         }
+                    }
+                    val showScrollbar = scrollbarMetrics != null
 
-                        pagePhotos.isEmpty() -> {
-                            Text(
-                                text = emptyStateText,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.align(Alignment.Center)
-                            )
-                        }
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when {
+                            uiState.isLoading && pagePhotos.isEmpty() -> {
+                                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                            }
 
-                        else -> {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(3),
-                                    state = pageGridState,
-                                    contentPadding = PaddingValues(2.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .testTag(GALLERY_GRID_TAG)
-                                ) {
-                                    pagePhotoSections.forEach { section ->
-                                        item(
-                                            key = "header_${section.day.toEpochDay()}",
-                                            span = { GridItemSpan(maxLineSpan) },
-                                            contentType = "day_header"
-                                        ) {
-                                            val sectionPhotoIds = section.photos.map { photo -> photo.id }
-                                            val isSectionFullySelected = sectionPhotoIds.isNotEmpty() &&
-                                                sectionPhotoIds.all { photoId ->
-                                                    photoId in uiState.selectedPhotoIds
-                                                }
-                                            DaySectionHeader(
-                                                label = section.label,
-                                                showSelectionAction = !isTrashPage,
-                                                isSectionFullySelected = isSectionFullySelected,
-                                                onToggleSectionSelection = {
-                                                    if (isSectionFullySelected) {
-                                                        onDeselectPhotos(sectionPhotoIds)
-                                                    } else {
-                                                        onSelectPhotos(sectionPhotoIds)
+                            uiState.errorMessage != null && pagePhotos.isEmpty() -> {
+                                ErrorState(
+                                    message = uiState.errorMessage,
+                                    onRetry = onRetry,
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+                            }
+
+                            pagePhotos.isEmpty() -> {
+                                Text(
+                                    text = emptyStateText,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+                            }
+
+                            else -> {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Fixed(3),
+                                        state = pageGridState,
+                                        contentPadding = PaddingValues(2.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .testTag(GALLERY_GRID_TAG)
+                                    ) {
+                                        pagePhotoSections.forEach { section ->
+                                            item(
+                                                key = "header_${section.day.toEpochDay()}",
+                                                span = { GridItemSpan(maxLineSpan) },
+                                                contentType = "day_header"
+                                            ) {
+                                                val sectionPhotoIds = section.photos.map { photo -> photo.id }
+                                                val isSectionFullySelected = sectionPhotoIds.isNotEmpty() &&
+                                                    sectionPhotoIds.all { photoId ->
+                                                        photoId in uiState.selectedPhotoIds
                                                     }
-                                                }
-                                            )
-                                        }
+                                                DaySectionHeader(
+                                                    label = section.label,
+                                                    showSelectionAction = !isTrashPage,
+                                                    isSectionFullySelected = isSectionFullySelected,
+                                                    onToggleSectionSelection = {
+                                                        if (isSectionFullySelected) {
+                                                            onDeselectPhotos(sectionPhotoIds)
+                                                        } else {
+                                                            onSelectPhotos(sectionPhotoIds)
+                                                        }
+                                                    }
+                                                )
+                                            }
 
-                                        items(
-                                            items = section.photos,
-                                            key = { it.id },
-                                            contentType = { "photo" }
-                                        ) { photo ->
-                                            PhotoGridItem(
-                                                photo = photo,
-                                                imageLoader = imageLoader,
-                                                isSelectionMode = uiState.isSelectionMode,
-                                                isSelected = photo.id in uiState.selectedPhotoIds,
-                                                onClick = { onPhotoClick(photo) },
-                                                onLongClick = { onPhotoLongClick(photo) }
-                                            )
+                                            items(
+                                                items = section.photos,
+                                                key = { it.id },
+                                                contentType = { "photo" }
+                                            ) { photo ->
+                                                PhotoGridItem(
+                                                    photo = photo,
+                                                    imageLoader = imageLoader,
+                                                    isSelectionMode = uiState.isSelectionMode,
+                                                    isSelected = photo.id in uiState.selectedPhotoIds,
+                                                    onClick = { onPhotoClick(photo) },
+                                                    onLongClick = { onPhotoLongClick(photo) }
+                                                )
+                                            }
                                         }
                                     }
-                                }
 
-                                if (showScrollbar && scrollbarMetrics != null) {
-                                    GalleryGridScrollbar(
-                                        gridState = pageGridState,
-                                        metrics = scrollbarMetrics,
-                                        timelineSectionAnchors = timelineSectionAnchors,
-                                        locale = locale,
-                                        isListScrolling = pageGridState.isScrollInProgress,
-                                        modifier = Modifier
-                                            .align(Alignment.CenterEnd)
-                                            .padding(vertical = 6.dp, horizontal = 4.dp)
-                                            .testTag(GALLERY_SCROLLBAR_TAG)
-                                    )
+                                    if (showScrollbar && scrollbarMetrics != null) {
+                                        GalleryGridScrollbar(
+                                            gridState = pageGridState,
+                                            metrics = scrollbarMetrics,
+                                            timelineSectionAnchors = timelineSectionAnchors,
+                                            locale = locale,
+                                            isListScrolling = pageGridState.isScrollInProgress,
+                                            modifier = Modifier
+                                                .align(Alignment.CenterEnd)
+                                                .padding(vertical = 6.dp, horizontal = 4.dp)
+                                                .testTag(GALLERY_SCROLLBAR_TAG)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            if (uiState.isLoading && currentPhotos.isNotEmpty()) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .align(Alignment.TopCenter)
-                )
-            }
-
-            if (revealProgress > 0f) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
-                    shape = MaterialTheme.shapes.large,
-                    tonalElevation = 2.dp,
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .align(Alignment.TopCenter)
-                        .graphicsLayer { alpha = revealProgress }
-                ) {
-                    Text(
-                        text = mediaCountText,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                if (uiState.isLoading && currentPhotos.isNotEmpty()) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
                     )
                 }
             }
@@ -1177,19 +1207,34 @@ private fun GallerySectionTabs(
     )
     val selectedTabIndex = tabs.indexOfFirst { it.first == currentTab }.coerceAtLeast(0)
 
-    TabRow(
-        selectedTabIndex = selectedTabIndex,
-        modifier = modifier.testTag(GALLERY_TAB_ROW_TAG),
-        divider = {}
+    Row(
+        modifier = modifier
+            .testTag(GALLERY_TAB_ROW_TAG)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         tabs.forEachIndexed { index, (tab, label) ->
-            Tab(
-                modifier = Modifier.testTag(
-                    if (tab == GalleryTab.PHOTOS) GALLERY_TAB_PHOTOS_TAG else GALLERY_TAB_TRASH_TAG
-                ),
-                selected = selectedTabIndex == index,
-                onClick = { onTabSelected(tab) },
-                text = { Text(text = label) }
+            val isSelected = selectedTabIndex == index
+            val tabTextColor = if (isSelected) GalleryActiveTabColor else GalleryInactiveTabColor
+            Text(
+                text = label,
+                color = tabTextColor,
+                modifier = Modifier
+                    .testTag(
+                        if (tab == GalleryTab.PHOTOS) GALLERY_TAB_PHOTOS_TAG else GALLERY_TAB_TRASH_TAG
+                    )
+                    .semantics {
+                        galleryTabTextColorArgb = tabTextColor.toArgb()
+                    }
+                    .selectable(
+                        selected = isSelected,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Tab,
+                        onClick = { onTabSelected(tab) }
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             )
         }
     }
@@ -1234,9 +1279,10 @@ private fun TrashSelectionPopupMenu(
 }
 
 @Composable
-private fun SelectionBottomDeleteBar(
-    onDeleteSelected: () -> Unit,
-    enabled: Boolean
+private fun GalleryBottomActionBar(
+    onAction: () -> Unit,
+    enabled: Boolean,
+    label: String
 ) {
     Surface(
         color = Color.White,
@@ -1250,7 +1296,7 @@ private fun SelectionBottomDeleteBar(
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Button(
-                onClick = onDeleteSelected,
+                onClick = onAction,
                 enabled = enabled,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = SelectionActionBackground,
@@ -1264,7 +1310,7 @@ private fun SelectionBottomDeleteBar(
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 26.dp, vertical = 10.dp)
             ) {
-                Text(text = stringResource(id = R.string.delete))
+                Text(text = label)
             }
         }
     }
@@ -1544,11 +1590,14 @@ internal fun FullscreenMediaScreen(
     val density = LocalDensity.current
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var isCurrentPhotoZoomed by remember { mutableStateOf(false) }
-
     LaunchedEffect(currentMedia.id) {
         dragOffsetY = 0f
         isCurrentPhotoZoomed = false
         onCurrentMediaChanged(currentMedia)
+    }
+    var areBarsVisible by rememberSaveable { mutableStateOf(true) }
+    val toggleBarsVisibility = {
+        areBarsVisible = !areBarsVisible
     }
 
     BoxWithConstraints(
@@ -1611,51 +1660,57 @@ internal fun FullscreenMediaScreen(
         }
 
         Scaffold(
-            modifier = Modifier
-                .fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             topBar = {
-                TopAppBar(
-                    title = { Text(text = dateTimeLabel) },
-                    navigationIcon = {
-                        TextButton(onClick = onBack) {
-                            Text(text = stringResource(id = R.string.back))
+                if (areBarsVisible) {
+                    TopAppBar(
+                        modifier = Modifier.testTag(FULLSCREEN_TOP_APP_BAR_TAG),
+                        title = { Text(text = dateTimeLabel) },
+                        navigationIcon = {
+                            TextButton(onClick = onBack) {
+                                Text(text = stringResource(id = R.string.back))
+                            }
                         }
-                    }
-                )
+                    )
+                }
             },
             bottomBar = {
-                Surface(
-                    tonalElevation = 3.dp,
-                    modifier = Modifier.navigationBarsPadding()
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                if (areBarsVisible) {
+                    Surface(
+                        tonalElevation = 3.dp,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
+                            .navigationBarsPadding()
+                            .testTag(FULLSCREEN_BOTTOM_BAR_TAG)
                     ) {
-                        if (currentMedia.mediaType == MediaType.PHOTO) {
-                            if (onEditPhoto != null) {
-                                TextButton(onClick = { onEditPhoto(currentMedia) }) {
-                                    Text(text = stringResource(id = R.string.edit))
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            if (currentMedia.mediaType == MediaType.PHOTO) {
+                                if (onEditPhoto != null) {
+                                    TextButton(onClick = { onEditPhoto(currentMedia) }) {
+                                        Text(text = stringResource(id = R.string.edit))
+                                    }
                                 }
+                                TextButton(
+                                    onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                    enabled = onDelete != null
+                                ) {
+                                    Text(text = stringResource(id = R.string.delete))
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { onDelete?.invoke(currentMedia.contentUri) },
+                                    enabled = onDelete != null
+                                ) {
+                                    Text(text = stringResource(id = R.string.delete))
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
                             }
-                            TextButton(
-                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                                enabled = onDelete != null
-                            ) {
-                                Text(text = stringResource(id = R.string.delete))
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.weight(1f))
-                            TextButton(
-                                onClick = { onDelete?.invoke(currentMedia.contentUri) },
-                                enabled = onDelete != null
-                            ) {
-                                Text(text = stringResource(id = R.string.delete))
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -1666,6 +1721,7 @@ internal fun FullscreenMediaScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .background(MaterialTheme.colorScheme.scrim)
                     .then(dragToDismissModifier)
                     .offset { IntOffset(0, dragOffsetY.roundToInt()) }
             ) { page ->
@@ -1673,6 +1729,7 @@ internal fun FullscreenMediaScreen(
                 when (item.mediaType) {
                     MediaType.PHOTO -> FullscreenPhotoPage(
                         photoUri = item.contentUri,
+                        onTap = toggleBarsVisibility,
                         onZoomStateChanged = { isZoomed ->
                             if (page == pagerState.currentPage) {
                                 isCurrentPhotoZoomed = isZoomed
@@ -1681,7 +1738,8 @@ internal fun FullscreenMediaScreen(
                     )
                     MediaType.VIDEO -> FullscreenVideoPage(
                         videoUri = item.contentUri,
-                        isCurrentPage = page == pagerState.currentPage
+                        isCurrentPage = page == pagerState.currentPage,
+                        onTap = toggleBarsVisibility
                     )
                 }
             }
@@ -1692,6 +1750,7 @@ internal fun FullscreenMediaScreen(
 @Composable
 private fun FullscreenPhotoPage(
     photoUri: Uri,
+    onTap: () -> Unit,
     onZoomStateChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -1753,6 +1812,7 @@ private fun FullscreenPhotoPage(
                 .clipToBounds()
                 .pointerInput(photoUri, widthPx, heightPx) {
                     detectTapGestures(
+                        onTap = { onTap() },
                         onDoubleTap = { tapOffset ->
                             if (scale > 1f) {
                                 scale = 1f
@@ -1825,13 +1885,15 @@ private fun clampTranslation(
 @Composable
 private fun FullscreenVideoPage(
     videoUri: Uri,
-    isCurrentPage: Boolean
+    isCurrentPage: Boolean,
+    onTap: () -> Unit
 ) {
     var videoView: VideoView? by remember(videoUri) { mutableStateOf(null) }
 
     DisposableEffect(videoUri) {
         onDispose {
             videoView?.setOnPreparedListener(null)
+            videoView?.setOnClickListener(null)
             videoView?.stopPlayback()
             videoView = null
         }
@@ -1847,6 +1909,9 @@ private fun FullscreenVideoPage(
                     }
                     setMediaController(controller)
                     setVideoURI(videoUri)
+                    setOnClickListener {
+                        onTap()
+                    }
                     setOnPreparedListener { mediaPlayer ->
                         mediaPlayer.isLooping = false
                         if (isCurrentPage) {

@@ -3,7 +3,9 @@ package com.example.basicgallery.ui.gallery
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
@@ -36,6 +38,34 @@ class FullscreenMediaScreenTest {
         setFullscreenContent(onEditPhoto = null)
 
         composeRule.onNodeWithText(composeRule.activity.getString(R.string.edit)).assertDoesNotExist()
+    }
+
+    @Test
+    fun fullscreenMedia_byDefault_showsTopAndBottomBars() {
+        setFullscreenContent(onEditPhoto = {})
+
+        composeRule.onNodeWithTag(FULLSCREEN_TOP_APP_BAR_TAG).assertExists()
+        composeRule.onNodeWithTag(FULLSCREEN_BOTTOM_BAR_TAG).assertExists()
+    }
+
+    @Test
+    fun fullscreenPhoto_singleTap_togglesTopAndBottomBars() {
+        setFullscreenContent(onEditPhoto = {})
+        val contentDescription = composeRule.activity.getString(R.string.photo_content_description)
+
+        composeRule.onNodeWithContentDescription(contentDescription).performTouchInput { click() }
+        composeRule.mainClock.advanceTimeBy(350L)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag(FULLSCREEN_TOP_APP_BAR_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(FULLSCREEN_BOTTOM_BAR_TAG).assertDoesNotExist()
+
+        composeRule.onNodeWithContentDescription(contentDescription).performTouchInput { click() }
+        composeRule.mainClock.advanceTimeBy(350L)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag(FULLSCREEN_TOP_APP_BAR_TAG).assertExists()
+        composeRule.onNodeWithTag(FULLSCREEN_BOTTOM_BAR_TAG).assertExists()
     }
 
     @Test
@@ -72,7 +102,8 @@ class FullscreenMediaScreenTest {
                 moveBy(Offset(0f, 60f))
                 up()
             }
-        composeRule.mainClock.advanceTimeBy(400)
+        composeRule.mainClock.advanceTimeBy(400L)
+        composeRule.waitForIdle()
 
         composeRule.runOnIdle {
             assertEquals(0, onBackCalls)
