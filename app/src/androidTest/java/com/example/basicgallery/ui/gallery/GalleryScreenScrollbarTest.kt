@@ -8,8 +8,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import coil.ImageLoader
 import com.example.basicgallery.data.model.PhotoItem
@@ -24,8 +27,10 @@ class GalleryScreenScrollbarTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
+    // --- Initial visibility ---
+
     @Test
-    fun photosGrid_scrollbarIsVisibleWhenContentScrollable() {
+    fun photosGrid_scrollbarHiddenInitiallyEvenWithManyPhotos() {
         setGalleryContent(
             uiState = GalleryUiState(
                 photos = createPhotos(count = 240),
@@ -33,8 +38,7 @@ class GalleryScreenScrollbarTest {
             )
         )
 
-        composeRule.onNodeWithTag(GALLERY_GRID_TAG).assertExists()
-        composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertExists()
+        composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertDoesNotExist()
     }
 
     @Test
@@ -48,6 +52,77 @@ class GalleryScreenScrollbarTest {
 
         composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertDoesNotExist()
     }
+
+    // --- Scroll-driven visibility ---
+
+    @Test
+    fun photosGrid_scrollbarAppearsWhenGridIsScrolled() {
+        composeRule.mainClock.autoAdvance = false
+
+        setGalleryContent(
+            uiState = GalleryUiState(
+                photos = createPhotos(count = 240),
+                photoCount = 240
+            )
+        )
+        composeRule.mainClock.advanceTimeByFrame()
+
+        composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertDoesNotExist()
+
+        composeRule.onNodeWithTag(GALLERY_GRID_TAG).performTouchInput {
+            swipeUp()
+        }
+        // One frame to process isScrollInProgress → true → isVisible = true
+        composeRule.mainClock.advanceTimeByFrame()
+
+        composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun photosGrid_scrollbarHidesAfterScrollStops() {
+        composeRule.mainClock.autoAdvance = false
+
+        setGalleryContent(
+            uiState = GalleryUiState(
+                photos = createPhotos(count = 240),
+                photoCount = 240
+            )
+        )
+        composeRule.mainClock.advanceTimeByFrame()
+
+        composeRule.onNodeWithTag(GALLERY_GRID_TAG).performTouchInput {
+            swipeUp()
+        }
+        // Let fling animation and hide delay complete (1200 ms delay + animation budget)
+        composeRule.mainClock.advanceTimeBy(3_000L)
+        composeRule.mainClock.advanceTimeByFrame()
+
+        composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun photosGrid_scrollbarRemainsVisibleWhileScrollContinues() {
+        composeRule.mainClock.autoAdvance = false
+
+        setGalleryContent(
+            uiState = GalleryUiState(
+                photos = createPhotos(count = 240),
+                photoCount = 240
+            )
+        )
+        composeRule.mainClock.advanceTimeByFrame()
+
+        composeRule.onNodeWithTag(GALLERY_GRID_TAG).performTouchInput {
+            swipeUp()
+        }
+        // Advance just enough to show the scrollbar but not past the hide delay
+        composeRule.mainClock.advanceTimeBy(500L)
+        composeRule.mainClock.advanceTimeByFrame()
+
+        composeRule.onNodeWithTag(GALLERY_SCROLLBAR_TAG).assertIsDisplayed()
+    }
+
+    // --- Helper ---
 
     private fun setGalleryContent(uiState: GalleryUiState) {
         composeRule.setContent {
