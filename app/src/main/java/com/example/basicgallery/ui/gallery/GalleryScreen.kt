@@ -22,11 +22,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -149,6 +152,8 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 internal const val GALLERY_TOP_APP_BAR_TAG = "gallery_top_app_bar"
@@ -959,7 +964,6 @@ internal fun GalleryScreen(
                                             metrics = scrollbarMetrics,
                                             timelineSectionAnchors = timelineSectionAnchors,
                                             locale = locale,
-                                            isListScrolling = pageGridState.isScrollInProgress,
                                             modifier = Modifier
                                                 .align(Alignment.CenterEnd)
                                                 .padding(vertical = 6.dp, horizontal = 4.dp)
@@ -990,7 +994,6 @@ private fun GalleryGridScrollbar(
     metrics: GridScrollbarMetrics?,
     timelineSectionAnchors: List<GridTimelineSectionAnchor>,
     locale: Locale,
-    isListScrolling: Boolean,
     modifier: Modifier = Modifier
 ) {
     if (metrics == null) return
@@ -1007,6 +1010,19 @@ private fun GalleryGridScrollbar(
     var isScrubbing by remember(gridState) { mutableStateOf(false) }
     var scrubFraction by remember(gridState) { mutableFloatStateOf(0f) }
     var lastRequestedIndex by remember(gridState) { mutableIntStateOf(-1) }
+    var isVisible by remember(gridState) { mutableStateOf(false) }
+
+    LaunchedEffect(gridState) {
+        snapshotFlow { gridState.isScrollInProgress || isScrubbing }
+            .collectLatest { active ->
+                if (active) {
+                    isVisible = true
+                } else {
+                    delay(1200L)
+                    isVisible = false
+                }
+            }
+    }
 
     val activeThumbOffsetFraction = if (isScrubbing) {
         scrubFraction
@@ -1054,140 +1070,165 @@ private fun GalleryGridScrollbar(
         }
     }
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxHeight(0.92f)
-            .width(108.dp)
+    val currentMetrics = rememberUpdatedState(metrics)
+    val currentThumbOffsetFraction = rememberUpdatedState(activeThumbOffsetFraction)
+
+    AnimatedVisibility(
+        visible = isVisible,
+        modifier = modifier,
+        enter = fadeIn(),
+        exit = fadeOut()
     ) {
-        val density = LocalDensity.current
-        val trackHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
-        val thumbHeightPx = (trackHeightPx * metrics.thumbHeightFraction).coerceIn(0f, trackHeightPx)
-        val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
-        val thumbTopPx = (activeThumbOffsetFraction * maxThumbOffsetPx).coerceIn(0f, maxThumbOffsetPx)
-        val thumbCenterPx = thumbTopPx + thumbHeightPx / 2f
-        val bubbleHeightPx = with(density) { 32.dp.toPx() }
-        val bubbleTopPx = (thumbCenterPx - bubbleHeightPx / 2f)
-            .coerceIn(0f, (trackHeightPx - bubbleHeightPx).coerceAtLeast(0f))
-        val markerHeightPx = with(density) { 16.dp.toPx() }
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxHeight(0.92f)
+                .width(108.dp)
+        ) {
+            val density = LocalDensity.current
+            val trackHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+            val thumbHeightPx = (trackHeightPx * metrics.thumbHeightFraction).coerceIn(0f, trackHeightPx)
+            val maxThumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f)
+            val thumbTopPx = (activeThumbOffsetFraction * maxThumbOffsetPx).coerceIn(0f, maxThumbOffsetPx)
+            val thumbCenterPx = thumbTopPx + thumbHeightPx / 2f
+            val bubbleHeightPx = with(density) { 32.dp.toPx() }
+            val bubbleTopPx = (thumbCenterPx - bubbleHeightPx / 2f)
+                .coerceIn(0f, (trackHeightPx - bubbleHeightPx).coerceAtLeast(0f))
+            val markerHeightPx = with(density) { 16.dp.toPx() }
 
-        val isActive = isScrubbing || isListScrolling
-        val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isActive) 0.2f else 0.11f)
-        val thumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isActive) 0.74f else 0.52f)
-        val markerDotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            val thumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isScrubbing) 0.74f else 0.52f)
+            val markerDotColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
 
-        if (isScrubbing) {
-            yearMarkers.forEach { marker ->
-                val markerCenterPx = marker.offsetFraction * trackHeightPx
-                val markerOffsetY = (markerCenterPx - markerHeightPx / 2f)
-                    .coerceIn(0f, (trackHeightPx - markerHeightPx).coerceAtLeast(0f))
-                    .roundToInt()
+            if (isScrubbing) {
+                yearMarkers.forEach { marker ->
+                    val markerCenterPx = marker.offsetFraction * trackHeightPx
+                    val markerOffsetY = (markerCenterPx - markerHeightPx / 2f)
+                        .coerceIn(0f, (trackHeightPx - markerHeightPx).coerceAtLeast(0f))
+                        .roundToInt()
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset { IntOffset(x = 0, y = markerOffsetY) }
-                ) {
-                    Canvas(modifier = Modifier.width(4.dp).height(4.dp)) {
-                        drawCircle(
-                            color = markerDotColor,
-                            radius = size.minDimension / 2f
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .offset { IntOffset(x = 0, y = markerOffsetY) }
+                    ) {
+                        Canvas(modifier = Modifier.width(4.dp).height(4.dp)) {
+                            drawCircle(
+                                color = markerDotColor,
+                                radius = size.minDimension / 2f
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = marker.year.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(modifier = Modifier.width(6.dp))
+                }
+            }
+
+            if (isScrubbing && !monthYearLabel.isNullOrEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
+                    shape = MaterialTheme.shapes.small,
+                    tonalElevation = 3.dp,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset {
+                            IntOffset(
+                                x = -with(density) { 34.dp.roundToPx() },
+                                y = bubbleTopPx.roundToInt()
+                            )
+                        }
+                        .testTag(GALLERY_SCROLLBAR_HINT_TAG)
+                ) {
                     Text(
-                        text = marker.year.toString(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = monthYearLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
             }
-        }
 
-        if (isScrubbing && !monthYearLabel.isNullOrEmpty()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.98f),
-                shape = MaterialTheme.shapes.small,
-                tonalElevation = 3.dp,
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset {
-                        IntOffset(
-                            x = -with(density) { 34.dp.roundToPx() },
-                            y = bubbleTopPx.roundToInt()
-                        )
-                    }
-                    .testTag(GALLERY_SCROLLBAR_HINT_TAG)
-            ) {
-                Text(
-                    text = monthYearLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .width(28.dp)
-                .pointerInput(totalItemsCount) {
-                    detectTapGestures { tapOffset ->
-                        isScrubbing = true
-                        val fraction = tapOffset.y / size.height.toFloat().coerceAtLeast(1f)
-                        updateScrubFraction(fraction)
-                        isScrubbing = false
-                        lastRequestedIndex = -1
-                    }
-                }
-                .pointerInput(totalItemsCount) {
-                    detectDragGestures(
-                        onDragStart = { dragStart ->
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(28.dp)
+                    .pointerInput(totalItemsCount) {
+                        detectTapGestures { tapOffset ->
                             isScrubbing = true
-                            val fraction = dragStart.y / size.height.toFloat().coerceAtLeast(1f)
+                            val fraction = tapOffset.y / size.height.toFloat().coerceAtLeast(1f)
                             updateScrubFraction(fraction)
-                        },
-                        onDragEnd = {
-                            isScrubbing = false
-                            lastRequestedIndex = -1
-                        },
-                        onDragCancel = {
                             isScrubbing = false
                             lastRequestedIndex = -1
                         }
-                    ) { change, _ ->
-                        change.consume()
-                        val fraction = change.position.y / size.height.toFloat().coerceAtLeast(1f)
-                        updateScrubFraction(fraction)
                     }
-                }
-        ) {
-            Canvas(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxHeight()
-                    .width(4.dp)
+                    .pointerInput(totalItemsCount) {
+                        var isThumbDrag = false
+                        detectDragGestures(
+                            onDragStart = { dragStart ->
+                                val m = currentMetrics.value ?: return@detectDragGestures
+                                val trackH = size.height.toFloat().coerceAtLeast(1f)
+                                val thumbH = trackH * m.thumbHeightFraction
+                                val maxOff = (trackH - thumbH).coerceAtLeast(0f)
+                                val thumbTop = currentThumbOffsetFraction.value * maxOff
+                                val thumbBottom = thumbTop + thumbH
+                                val tolerance = 24.dp.toPx()
+                                isThumbDrag = dragStart.y >= (thumbTop - tolerance) &&
+                                    dragStart.y <= (thumbBottom + tolerance)
+                                if (isThumbDrag) {
+                                    isScrubbing = true
+                                    scrubFraction = currentThumbOffsetFraction.value
+                                }
+                            },
+                            onDragEnd = {
+                                if (isThumbDrag) {
+                                    isScrubbing = false
+                                    lastRequestedIndex = -1
+                                }
+                                isThumbDrag = false
+                            },
+                            onDragCancel = {
+                                if (isThumbDrag) {
+                                    isScrubbing = false
+                                    lastRequestedIndex = -1
+                                }
+                                isThumbDrag = false
+                            }
+                        ) { change, dragAmount ->
+                            if (!isThumbDrag) return@detectDragGestures
+                            change.consume()
+                            val m = currentMetrics.value ?: return@detectDragGestures
+                            val trackH = size.height.toFloat().coerceAtLeast(1f)
+                            val thumbH = trackH * m.thumbHeightFraction
+                            val maxOff = (trackH - thumbH).coerceAtLeast(0f)
+                            val deltaFraction = if (maxOff > 0f) dragAmount.y / maxOff else 0f
+                            updateScrubFraction(scrubFraction + deltaFraction)
+                        }
+                    }
             ) {
-                if (size.height <= 0f || size.width <= 0f) return@Canvas
+                Canvas(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxHeight()
+                        .width(6.dp)
+                ) {
+                    if (size.height <= 0f || size.width <= 0f) return@Canvas
 
-                val cornerRadius = CornerRadius(x = size.width / 2f, y = size.width / 2f)
-                drawRoundRect(
-                    color = trackColor,
-                    size = size,
-                    cornerRadius = cornerRadius
-                )
+                    val cornerRadius = CornerRadius(x = size.width / 2f, y = size.width / 2f)
+                    val m = currentMetrics.value ?: return@Canvas
+                    val thumbHeight = (size.height * m.thumbHeightFraction).coerceIn(0f, size.height)
+                    val maxThumbOffset = (size.height - thumbHeight).coerceAtLeast(0f)
+                    val thumbTop = (currentThumbOffsetFraction.value * maxThumbOffset).coerceIn(0f, maxThumbOffset)
 
-                val thumbHeight = (size.height * metrics.thumbHeightFraction).coerceIn(0f, size.height)
-                val maxThumbOffset = (size.height - thumbHeight).coerceAtLeast(0f)
-                val thumbTop = (activeThumbOffsetFraction * maxThumbOffset).coerceIn(0f, maxThumbOffset)
-
-                drawRoundRect(
-                    color = thumbColor,
-                    topLeft = Offset(x = 0f, y = thumbTop),
-                    size = Size(width = size.width, height = thumbHeight),
-                    cornerRadius = cornerRadius
-                )
+                    drawRoundRect(
+                        color = thumbColor,
+                        topLeft = Offset(x = 0f, y = thumbTop),
+                        size = Size(width = size.width, height = thumbHeight),
+                        cornerRadius = cornerRadius
+                    )
+                }
             }
         }
     }
