@@ -38,4 +38,15 @@
     <string name="photo_editor_saved">Измененное фото сохранено.</string>
     <string name="photo_editor_save_failed">Не удалось сохранить измененное фото.</string>
     <string name="photo_editor_load_failed">Не удалось загрузить фото для редактирования.</string>
+    <string name="delete_confirm_title">Удалить</string>
+    <string name="manage_media_rationale_title">Управление медиафайлами</string>
+    <string name="manage_media_rationale_message">Разрешите Basic Gallery управлять файлами, чтобы удаление не показывало дополнительные диалоги Android.</string>
+    <string name="manage_media_open_settings">Открыть настройки</string>
+    <string name="manage_media_later">Позже</string>
+    <plurals name="delete_confirm_message">
+        <item quantity="one">Удалить %d объект?</item>
+        <item quantity="few">Удалить %d объекта?</item>
+        <item quantity="many">Удалить %d объектов?</item>
+        <item quantity="other">Удалить %d объекта?</item>
+    </plurals>
 </resources>
