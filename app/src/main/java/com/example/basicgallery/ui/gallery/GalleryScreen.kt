@@ -14,6 +14,7 @@ import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.MediaStore
 import android.provider.Settings
 import android.widget.MediaController
 import android.widget.Toast
@@ -67,6 +68,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -118,6 +120,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsPropertyKey
@@ -359,6 +362,66 @@ internal fun createFullscreenDeleteHandler(
     }
 }
 
+private fun canManageMedia(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+    return MediaStore.canManageMedia(context)
+}
+
+@Composable
+private fun ManageMediaPermissionDialog(
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(R.string.manage_media_rationale_title))
+        },
+        text = {
+            Text(text = stringResource(R.string.manage_media_rationale_message))
+        },
+        confirmButton = {
+            TextButton(onClick = onOpenSettings) {
+                Text(text = stringResource(R.string.manage_media_open_settings))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.manage_media_later))
+            }
+        }
+    )
+}
+
+@Composable
+private fun DeleteConfirmationDialog(
+    itemCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(R.string.delete_confirm_title))
+        },
+        text = {
+            Text(
+                text = pluralStringResource(R.plurals.delete_confirm_message, itemCount, itemCount)
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = stringResource(R.string.delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
 @Composable
 fun GalleryRoute(viewModel: GalleryViewModel) {
     val context = LocalContext.current
@@ -383,6 +446,10 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var currentTabName by rememberSaveable { mutableStateOf(GalleryTab.PHOTOS.name) }
     val currentTab = GalleryTab.valueOf(currentTabName)
     var pendingMediaRequest by remember { mutableStateOf<PendingMediaRequest?>(null) }
+    var pendingDeleteConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingDeleteConfirmCount by rememberSaveable { mutableIntStateOf(0) }
+    var showManageMediaRationale by remember { mutableStateOf(false) }
+    var manageMediaRationaleShown by rememberSaveable { mutableStateOf(false) }
     val photosGridState = rememberLazyGridState()
     val trashGridState = rememberLazyGridState()
 
@@ -476,6 +543,16 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
         }
     }
 
+    LaunchedEffect(hasPermission) {
+        if (hasPermission && !manageMediaRationaleShown &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            !canManageMedia(context)
+        ) {
+            manageMediaRationaleShown = true
+            showManageMediaRationale = true
+        }
+    }
+
     BackHandler(enabled = selectedMediaUri == null && uiState.isSelectionMode) {
         viewModel.clearSelection()
     }
@@ -528,11 +605,16 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                         editorPhotoDateTakenMillis = media.dateTakenMillis
                     }
                 }
-                val onDeleteRequest = createFullscreenDeleteHandler(
-                    openedFromTrash = selectedMediaOpenedFromTrash,
-                    launchMoveToTrashRequest = ::launchMoveToTrashRequest,
-                    launchDeleteRequest = ::launchDeleteRequest
-                )
+                val onDeleteRequest = { uri: Uri ->
+                    pendingDeleteConfirmCount = 1
+                    pendingDeleteConfirmAction = {
+                        if (selectedMediaOpenedFromTrash) {
+                            launchDeleteRequest(listOf(uri), true)
+                        } else {
+                            launchMoveToTrashRequest(listOf(uri), true)
+                        }
+                    }
+                }
                 val mediaUri = Uri.parse(openedMediaUri)
 
                 FullscreenMediaScreen(
@@ -595,11 +677,10 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                             .filter { it.id in uiState.selectedPhotoIds }
                             .map { it.contentUri }
                             .toList()
-
-                        launchMoveToTrashRequest(
-                            photoUris = selectedUris,
-                            closeViewerAfterSuccess = false
-                        )
+                        pendingDeleteConfirmCount = selectedUris.size
+                        pendingDeleteConfirmAction = {
+                            launchMoveToTrashRequest(photoUris = selectedUris, closeViewerAfterSuccess = false)
+                        }
                     },
                     onRestoreSelected = {
                         val selectedUris = uiState.trashPhotos
@@ -615,18 +696,49 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                             .filter { it.id in uiState.selectedPhotoIds }
                             .map { it.contentUri }
                             .toList()
-                        launchDeleteRequest(selectedUris)
+                        pendingDeleteConfirmCount = selectedUris.size
+                        pendingDeleteConfirmAction = { launchDeleteRequest(selectedUris) }
                     },
                     onDeleteAllFromTrash = {
-                        launchDeleteRequest(
-                            uiState.trashPhotos.map { it.contentUri }
-                        )
+                        val allUris = uiState.trashPhotos.map { it.contentUri }
+                        pendingDeleteConfirmCount = allUris.size
+                        pendingDeleteConfirmAction = { launchDeleteRequest(allUris) }
                     },
                     onClearSelection = { viewModel.clearSelection() },
                     onRetry = { viewModel.loadPhotos(forceRefresh = true) }
                 )
             }
         }
+    }
+
+    pendingDeleteConfirmAction?.let { confirmAction ->
+        DeleteConfirmationDialog(
+            itemCount = pendingDeleteConfirmCount,
+            onConfirm = {
+                pendingDeleteConfirmAction = null
+                confirmAction()
+            },
+            onDismiss = {
+                pendingDeleteConfirmAction = null
+            }
+        )
+    }
+
+    if (showManageMediaRationale) {
+        ManageMediaPermissionDialog(
+            onOpenSettings = {
+                showManageMediaRationale = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val intent = android.content.Intent(Settings.ACTION_REQUEST_MANAGE_MEDIA).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                }
+            },
+            onDismiss = {
+                showManageMediaRationale = false
+            }
+        )
     }
 }
 

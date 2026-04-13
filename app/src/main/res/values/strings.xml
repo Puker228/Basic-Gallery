@@ -39,4 +39,13 @@
     <string name="photo_editor_saved">Edited photo saved.</string>
     <string name="photo_editor_save_failed">Unable to save edited photo.</string>
     <string name="photo_editor_load_failed">Unable to load photo for editing.</string>
+    <string name="delete_confirm_title">Delete</string>
+    <string name="manage_media_rationale_title">Allow media management</string>
+    <string name="manage_media_rationale_message">Grant Basic Gallery permission to manage files so deletions happen without extra confirmation dialogs from Android.</string>
+    <string name="manage_media_open_settings">Open Settings</string>
+    <string name="manage_media_later">Later</string>
+    <plurals name="delete_confirm_message">
+        <item quantity="one">Delete %d item?</item>
+        <item quantity="other">Delete %d items?</item>
+    </plurals>
 </resources>
