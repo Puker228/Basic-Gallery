@@ -39,6 +39,8 @@
     <string name="photo_editor_save_failed">Не удалось сохранить измененное фото.</string>
     <string name="photo_editor_load_failed">Не удалось загрузить фото для редактирования.</string>
     <string name="delete_confirm_title">Удалить</string>
+    <string name="clear_trash_title">Очистить корзину</string>
+    <string name="clear_trash_message">Удалить все объекты из облака и со всех синхронизированных устройств без возможности восстановления? Вы не сможете отменить это действие.</string>
     <string name="manage_media_rationale_title">Управление медиафайлами</string>
     <string name="manage_media_rationale_message">Разрешите Basic Gallery управлять файлами, чтобы удаление не показывало дополнительные диалоги Android.</string>
     <string name="manage_media_open_settings">Открыть настройки</string>

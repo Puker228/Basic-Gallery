@@ -71,6 +71,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -399,27 +402,103 @@ private fun DeleteConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text(text = stringResource(R.string.delete_confirm_title))
-        },
-        text = {
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
+        ) {
             Text(
-                text = pluralStringResource(R.plurals.delete_confirm_message, itemCount, itemCount)
+                text = stringResource(R.string.delete_confirm_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
             )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(text = stringResource(R.string.delete))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.cancel))
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = pluralStringResource(R.plurals.delete_confirm_message, itemCount, itemCount),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = stringResource(R.string.cancel))
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(text = stringResource(R.string.delete))
+                }
             }
         }
-    )
+    }
+}
+
+@Composable
+private fun ClearTrashBottomSheet(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.clear_trash_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.clear_trash_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = stringResource(R.string.cancel))
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text(text = stringResource(R.string.delete))
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -448,6 +527,8 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var pendingMediaRequest by remember { mutableStateOf<PendingMediaRequest?>(null) }
     var pendingDeleteConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingDeleteConfirmCount by rememberSaveable { mutableIntStateOf(0) }
+    var showClearTrashSheet by rememberSaveable { mutableStateOf(false) }
+    var pendingClearTrashAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showManageMediaRationale by remember { mutableStateOf(false) }
     var manageMediaRationaleShown by rememberSaveable { mutableStateOf(false) }
     val photosGridState = rememberLazyGridState()
@@ -701,14 +782,28 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     },
                     onDeleteAllFromTrash = {
                         val allUris = uiState.trashPhotos.map { it.contentUri }
-                        pendingDeleteConfirmCount = allUris.size
-                        pendingDeleteConfirmAction = { launchDeleteRequest(allUris) }
+                        pendingClearTrashAction = { launchDeleteRequest(allUris) }
+                        showClearTrashSheet = true
                     },
                     onClearSelection = { viewModel.clearSelection() },
                     onRetry = { viewModel.loadPhotos(forceRefresh = true) }
                 )
             }
         }
+    }
+
+    if (showClearTrashSheet) {
+        ClearTrashBottomSheet(
+            onConfirm = {
+                showClearTrashSheet = false
+                pendingClearTrashAction?.invoke()
+                pendingClearTrashAction = null
+            },
+            onDismiss = {
+                showClearTrashSheet = false
+                pendingClearTrashAction = null
+            }
+        )
     }
 
     pendingDeleteConfirmAction?.let { confirmAction ->
