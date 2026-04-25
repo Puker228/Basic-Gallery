@@ -56,6 +56,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -71,6 +72,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -127,6 +133,7 @@ import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Velocity
@@ -399,27 +406,145 @@ private fun DeleteConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(text = stringResource(R.string.delete_confirm_title))
-        },
-        text = {
-            Text(
-                text = pluralStringResource(R.plurals.delete_confirm_message, itemCount, itemCount)
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(text = stringResource(R.string.delete))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.cancel))
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = stringResource(R.string.delete_confirm_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = pluralStringResource(R.plurals.delete_confirm_message, itemCount, itemCount),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min)
+                    ) {
+                        TextButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(text = stringResource(R.string.cancel))
+                        }
+                        VerticalDivider()
+                        TextButton(
+                            onClick = onConfirm,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text(text = stringResource(R.string.delete))
+                        }
+                    }
+                }
             }
         }
-    )
+    }
+}
+
+@Composable
+private fun ClearTrashBottomSheet(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = stringResource(R.string.clear_trash_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.clear_trash_message),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    HorizontalDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min)
+                    ) {
+                        TextButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(text = stringResource(R.string.cancel))
+                        }
+                        VerticalDivider()
+                        TextButton(
+                            onClick = onConfirm,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text(text = stringResource(R.string.delete))
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -448,6 +573,8 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
     var pendingMediaRequest by remember { mutableStateOf<PendingMediaRequest?>(null) }
     var pendingDeleteConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingDeleteConfirmCount by rememberSaveable { mutableIntStateOf(0) }
+    var showClearTrashSheet by rememberSaveable { mutableStateOf(false) }
+    var pendingClearTrashAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var showManageMediaRationale by remember { mutableStateOf(false) }
     var manageMediaRationaleShown by rememberSaveable { mutableStateOf(false) }
     val photosGridState = rememberLazyGridState()
@@ -701,14 +828,28 @@ fun GalleryRoute(viewModel: GalleryViewModel) {
                     },
                     onDeleteAllFromTrash = {
                         val allUris = uiState.trashPhotos.map { it.contentUri }
-                        pendingDeleteConfirmCount = allUris.size
-                        pendingDeleteConfirmAction = { launchDeleteRequest(allUris) }
+                        pendingClearTrashAction = { launchDeleteRequest(allUris) }
+                        showClearTrashSheet = true
                     },
                     onClearSelection = { viewModel.clearSelection() },
                     onRetry = { viewModel.loadPhotos(forceRefresh = true) }
                 )
             }
         }
+    }
+
+    if (showClearTrashSheet) {
+        ClearTrashBottomSheet(
+            onConfirm = {
+                showClearTrashSheet = false
+                pendingClearTrashAction?.invoke()
+                pendingClearTrashAction = null
+            },
+            onDismiss = {
+                showClearTrashSheet = false
+                pendingClearTrashAction = null
+            }
+        )
     }
 
     pendingDeleteConfirmAction?.let { confirmAction ->
